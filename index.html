@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoZ API</title>
+<link id="favicon" rel="icon" href="assets/icons/favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg-layer"></div>
+<div class="bg-fade" id="bgFade"></div>
+<header class="topbar">
+<div class="brand">
+<div class="brand-mark" id="brandMark">R</div>
+<span class="brand-name" id="brandName">RoZ API</span>
+</div>
+<div class="topbar-actions">
+<div class="version-badge" id="versionBadge" title="Phiên bản hiện tại của web">
+<span class="version-badge-name" id="versionBadgeName">Pre-Alpha1</span>
+<span class="version-badge-code" id="versionBadgeCode">52eca7</span>
+</div>
+<div class="version-switch-wrap">
+<button type="button" class="icon-action-button" id="versionSwitchButton" title="Đổi phiên bản" aria-haspopup="true" aria-expanded="false">
+<span class="icon-action-label">Đổi phiên bản</span>
+<svg class="icon-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.7V12a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.3v.7a9 9 0 0 1-9 9 9 9 0 0 1-6-2.3"/></svg>
+</button>
+<div class="version-switch-menu" id="versionSwitchMenu" role="menu" hidden>
+<div class="version-switch-menu-inner" id="versionSwitchMenuInner"></div>
+</div>
+</div>
+<button type="button" class="icon-action-button" id="changelogButton" title="Update log" aria-haspopup="dialog" aria-expanded="false">
+<span class="icon-action-label">Update log</span>
+<svg class="icon-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6l1 3H8l1-3z"/><rect x="5" y="5" width="14" height="17" rx="2"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+</button>
+<a class="cta-button" id="ctaButton" href="#"><span class="cta-dot"></span><span class="cta-label" id="ctaLabel">Coming soon</span><svg class="cta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></a>
+</div>
+</header>
+<div class="changelog-overlay" id="changelogOverlay" hidden>
+<div class="changelog-modal" id="changelogModal" role="dialog" aria-modal="true" aria-labelledby="changelogModalTitle">
+<button type="button" class="changelog-close" id="changelogClose" aria-label="Đóng">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+</button>
+<div class="changelog-modal-header">
+<div class="changelog-modal-icon" id="changelogModalIcon"></div>
+<div class="changelog-modal-heading">
+<span class="changelog-modal-eyebrow">Update Log</span>
+<h2 class="changelog-modal-title" id="changelogModalTitle"></h2>
+<span class="changelog-modal-date" id="changelogModalDate"></span>
+</div>
+</div>
+<div class="changelog-modal-scroll" id="changelogModalScroll">
+<p class="changelog-modal-note" id="changelogModalNote"></p>
+<ul class="changelog-modal-list" id="changelogModalList"></ul>
+</div>
+</div>
+</div>
+<main class="stage">
+<div class="ntz-hover-zone" id="hoverZone">
+<div class="ntz-hero-wrap" id="wrap">
+<svg id="svg" viewBox="-60 -60 780 400" xmlns="http://www.w3.org/2000/svg" style="overflow:visible;">
+<path fill="none" stroke="none" d="M 30,210 L 30,50 L 160,210 L 160,50"/>
+<path fill="none" stroke="none" d="M 220,70 L 400,70 M 310,70 L 310,210"/>
+<path fill="none" stroke="none" d="M 440,70 L 630,70 L 440,210 L 630,210"/>
+<line id="ns1" stroke="none" stroke-width="34" stroke-linecap="round" x1="160" y1="50"  x2="160" y2="50"/>
+<line id="ns2" stroke="none" stroke-width="34" stroke-linecap="round" x1="160" y1="210" x2="160" y2="210"/>
+<line id="ns3" stroke="none" stroke-width="34" stroke-linecap="round" x1="30"  y1="50"  x2="30"  y2="50"/>
+<line id="ns4" stroke="none" stroke-width="34" stroke-linecap="round" x1="30"  y1="210" x2="30"  y2="210"/>
+<line id="ts1" stroke="none" stroke-width="34" stroke-linecap="round" x1="220" y1="70"  x2="220" y2="70"/>
+<line id="ts2" stroke="none" stroke-width="34" stroke-linecap="round" x1="400" y1="70"  x2="400" y2="70"/>
+<line id="ts3" stroke="none" stroke-width="34" stroke-linecap="round" x1="310" y1="210" x2="310" y2="210"/>
+<line id="zs1" stroke="none" stroke-width="34" stroke-linecap="round" x1="630" y1="210" x2="630" y2="210"/>
+<path id="tr_z" fill="none" stroke="white" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" d=""/>
+<path id="tr_t" fill="none" stroke="white" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" d=""/>
+<path id="tr_n" fill="none" stroke="white" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" d=""/>
+<path id="sk_z" fill="none" stroke="white" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" d=""/>
+<path id="sk_t" fill="none" stroke="white" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" d=""/>
+<path id="sk_n" fill="none" stroke="white" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" d=""/>
+</svg>
+<div class="ntz-panel" id="ntzPanel">
+<p class="ntz-panel-desc" id="ntzDesc"></p>
+<div class="ntz-panel-divider" aria-hidden="true"></div>
+<div class="ntz-panel-notify" id="ntzNotify">
+<div class="ntz-notify-frame">
+<span class="ntz-notify-title" id="ntzNotifyTitle">Thông báo</span>
+<span class="ntz-notify-label" id="ntzNotifyLabel">Notification</span>
+</div>
+<div class="ntz-notify-body" id="ntzNotifyBody"></div>
+</div>
+</div>
+</div>
+</div>
+<section class="paper">
+<div class="gen-box">
+<div class="input-row">
+<input type="text" id="gameLinkInput" autocomplete="off" spellcheck="false" placeholder="Dán link game Roblox, vd: https://www.roblox.com/games/90500188348656/Couser-Game">
+</div>
+<p class="gen-error" id="genError"></p>
+<div class="gen-result" id="genResult">
+<div class="game-card" id="gameCard">
+<div class="game-card-header">
+<div class="game-card-thumb-wrap" id="gameThumbWrap">
+<img class="game-card-thumb" id="gameThumb" alt="" src="" />
+</div>
+<div class="game-card-info">
+<div class="game-card-name" id="gameName">&nbsp;</div>
+<div class="game-card-creator-row">
+<span class="game-card-creator" id="gameCreator"></span>
+<svg class="game-card-verified" id="gameVerifiedBadge" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M12 2l2.4 1.7 2.9-.4 1.2 2.6 2.6 1.2-.4 2.9L22 12l-1.7 2.4.4 2.9-2.6 1.2-1.2 2.6-2.9-.4L12 22l-2.4-1.7-2.9.4-1.2-2.6-2.6-1.2.4-2.9L2 12l1.7-2.4-.4-2.9 2.6-1.2 1.2-2.6 2.9.4L12 2z"/><path d="M9 12.5l2 2 4-4.5" fill="none" stroke="#0a0c11" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</div>
+<div class="game-card-stats">
+<div class="game-card-stat" id="gameLikeStat" hidden>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/></svg>
+<span id="gameLikeText"></span>
+</div>
+<div class="game-card-stat" id="gamePlayingStat" hidden>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+<span id="gamePlayingText"></span>
+</div>
+<div class="game-card-stat" id="gameVisitsStat" hidden>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12s-4-7-10-7-10 7-10 7 4 7 10 7 10-7 10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+<span id="gameVisitsText"></span>
+</div>
+</div>
+<p class="game-card-description" id="gameDescription" hidden></p>
+</div>
+</div>
+<div class="game-card-actions">
+<button type="button" class="gen-btn gen-btn-join" id="joinBtn">
+<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+Chơi ngay
+</button>
+<button type="button" class="gen-btn-icon" id="copyBtn" title="Copy link" aria-label="Copy link vào game">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+</button>
+<button type="button" class="gen-btn-icon gen-btn-beta" id="betaBtn" disabled hidden title="Sắp ra mắt ở bản beta" aria-label="Tính năng dành cho bản beta, sắp ra mắt">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+</button>
+</div>
+</div>
+<input type="hidden" id="genOutput">
+<p class="gen-note" id="genNote"></p>
+</div>
+<div class="related-games" id="relatedGames" hidden>
+<p class="related-games-label">Kết quả khác</p>
+<div class="related-games-grid" id="relatedGamesGrid"></div>
+</div>
+</div>
+</section>
+</main>
+<script src="config.js"></script>
+<script src="versions.js"></script>
+<script src="script.js"></script>
+<script src="ntz-snake.js"></script>
+</body>
+</html>
