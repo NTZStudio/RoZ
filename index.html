@@ -115,13 +115,16 @@
 <div class="game-card" id="gameCard">
 <div class="game-card-header">
 <div class="game-card-thumb-wrap" id="gameThumbWrap">
-<img class="game-card-thumb" id="gameThumb" alt="" src="" />
+<img class="game-card-thumb" id="gameThumb" alt="" />
 </div>
 <div class="game-card-info">
 <div class="game-card-name" id="gameName">&nbsp;</div>
 <div class="game-card-creator-row">
 <span class="game-card-creator" id="gameCreator"></span>
 <svg class="game-card-verified" id="gameVerifiedBadge" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M12 2l2.4 1.7 2.9-.4 1.2 2.6 2.6 1.2-.4 2.9L22 12l-1.7 2.4.4 2.9-2.6 1.2-1.2 2.6-2.9-.4L12 22l-2.4-1.7-2.9.4-1.2-2.6-2.6-1.2.4-2.9L2 12l1.7-2.4-.4-2.9 2.6-1.2 1.2-2.6 2.9.4L12 2z"/><path d="M9 12.5l2 2 4-4.5" fill="none" stroke="#0a0c11" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<span class="game-card-verified-v2" id="gameVerifiedBadgeV2" tabindex="0" hidden>
+<img class="game-card-verified-v2-icon" id="gameVerifiedIconV2" alt="Verified" />
+</span>
 </div>
 <div class="game-card-stats">
 <div class="game-card-stat" id="gameLikeStat" hidden>
@@ -143,22 +146,35 @@
 <div class="game-card-actions">
 <button type="button" class="gen-btn gen-btn-join" id="joinBtn">
 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-PLAY
+<span>PLAY</span>
 </button>
-<button type="button" class="gen-btn-icon" id="copyBtn" title="Copy link" aria-label="Copy link vào game">
+<button type="button" class="gen-btn-icon" id="copyBtn" title="Copy link" aria-label="Copy link vào game" data-tooltip="Copy Game">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
 </button>
-<button type="button" class="gen-btn-icon gen-btn-beta" id="betaBtn" disabled hidden title="Sắp ra mắt ở bản beta" aria-label="Tính năng dành cho bản beta, sắp ra mắt">
+<button type="button" class="gen-btn-icon gen-btn-beta" id="betaBtn" disabled hidden title="Sắp ra mắt ở bản beta" aria-label="Tính năng dành cho bản beta, sắp ra mắt" data-tooltip="Save Game">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
 </button>
 </div>
 </div>
 <input type="hidden" id="genOutput">
-<p class="gen-note" id="genNote"></p>
+<p class="gen-note" id="genNote">
+<svg class="gen-note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7.5" x2="12" y2="12.5"/><circle cx="12" cy="16.2" r="0.9" fill="currentColor" stroke="none"/></svg>
+<span class="gen-note-text" id="genNoteText"></span>
+</p>
 </div>
 <div class="related-games" id="relatedGames" hidden>
 <p class="related-games-label" id="relatedGamesLabel">Kết quả khác</p>
 <div class="related-games-grid" id="relatedGamesGrid"></div>
+</div>
+<div class="discovery-rows" id="discoveryRows" hidden>
+<div class="discovery-section">
+<p class="discovery-label">🔥 Đang được chơi nhiều nhất</p>
+<div class="discovery-row" id="discoveryTrendingRow"></div>
+</div>
+<div class="discovery-section">
+<p class="discovery-label">✨ Lựa chọn cho bạn hôm nay</p>
+<div class="discovery-row" id="discoveryPicksRow"></div>
+</div>
 </div>
 </div>
 </section>
@@ -169,6 +185,40 @@ PLAY
 </section>
 </div>
 </main>
+<div class="float-tip" id="verifiedFloatTip" aria-hidden="true"></div>
+<div class="beta-settings" id="betaSettings" role="dialog" aria-label="Settings" hidden>
+<div class="beta-settings-header">
+<span class="beta-settings-title">Settings <span class="beta-settings-badge">BETA</span></span>
+<button type="button" class="beta-settings-close" id="betaSettingsClose" aria-label="Đóng Settings">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+</button>
+</div>
+<label class="beta-settings-row">
+<span class="beta-settings-row-text">
+Ẩn thanh cuộn
+<span class="beta-settings-row-hint">Áp dụng cho toàn bộ trang</span>
+</span>
+<span class="beta-toggle">
+<input type="checkbox" id="betaHideScrollbarToggle" checked>
+<span class="beta-toggle-track"><span class="beta-toggle-thumb"></span></span>
+</span>
+</label>
+<div class="beta-settings-divider"></div>
+<div class="beta-settings-group">
+<span class="beta-settings-row-text">
+Đổi API Proxy
+<span class="beta-settings-row-hint">Ghép thành: https://[name].[username].workers.dev</span>
+</span>
+<input type="text" class="beta-settings-input" id="betaProxyName" placeholder="tên worker (vd: roxy)" autocomplete="off" spellcheck="false">
+<input type="text" class="beta-settings-input" id="betaProxyUsername" placeholder="username Cloudflare" autocomplete="off" spellcheck="false">
+<div class="beta-settings-group-actions">
+<button type="button" class="beta-settings-btn" id="betaProxyApply">Áp dụng</button>
+<button type="button" class="beta-settings-btn beta-settings-btn-ghost" id="betaProxyReset">Mặc định</button>
+</div>
+<p class="beta-settings-proxy-current" id="betaProxyCurrent"></p>
+</div>
+<p class="beta-settings-hint">Nhấn <kbd>Shift</kbd> + <kbd>S</kbd> để mở/đóng bảng này.</p>
+</div>
 <script src="config.js"></script>
 <script src="versions.js"></script>
 <script src="script.js"></script>
