@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Montserrat:wght@700;800&display=swap');
 
 :root {
   --ink-950: #06070a;
@@ -34,6 +34,30 @@
 
 html, body {
   height: 100%;
+}
+
+/* Hide scrollbars page-wide — gated behind the beta Settings panel
+   (Shift+S, Pre-Alpha2.5+ via the `betaSettingsPanel` feature flag).
+   The toggle in that panel defaults to ON, so this is what visitors see
+   by default from that version onward, but it's opt-out (and entirely
+   absent, not just off, on older versions — no `.hide-scrollbars` class
+   ever gets added there since the flag that adds it doesn't exist yet).
+   Scrolling itself (wheel, trackpad, keyboard, touch) is untouched either
+   way — this only ever removes the visible track/thumb. Applies to every
+   scrollable area on the page, not just the main document, since the
+   request was to hide scrolling "toàn bộ trang" (site-wide) — hence the
+   universal `*` descendant selector for the WebKit pseudo-element rule.
+   Firefox uses scrollbar-width, older Edge/IE used -ms-overflow-style;
+   WebKit/Chromium (Chrome, Safari, new Edge) need the ::-webkit-scrollbar
+   rule instead — this property alone does nothing there. */
+html.hide-scrollbars,
+html.hide-scrollbars * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html.hide-scrollbars *::-webkit-scrollbar {
+  display: none;
 }
 
 body {
@@ -908,20 +932,10 @@ body.is-modal-open {
   display: flex;
   flex-direction: column;
   gap: 2cqw;
-  height: 0;
-  overflow: hidden;
-  transition: height 0.5s cubic-bezier(.22,1,.36,1);
 }
 
 .ntz-panel.is-notify .ntz-panel-notify {
   flex-basis: 46%;
-}
-
-/* Close faster than open, matching the panel's other closing-specific
-   transition speeds, so the collapse finishes in sync instead of lagging
-   behind after the text/width have already settled. */
-.ntz-panel.is-closing .ntz-panel-notify {
-  transition: height 0.26s cubic-bezier(.22,1,.36,1);
 }
 
 .ntz-notify-frame {
@@ -959,9 +973,19 @@ body.is-modal-open {
   letter-spacing: 0.01em;
   text-transform: uppercase;
   color: var(--paper);
+  /* At rest .ntz-panel-notify is squeezed to ~0 width (flex-basis: 0%) —
+     without overflow:hidden anymore, allowing this to wrap would make it
+     break onto a new line every character or two, ballooning its height
+     even while fully invisible (opacity: 0) and dragging .ntz-panel's
+     own height up with it. Kept on one line until there's real width to
+     wrap into (.is-notify/.is-closing below) — any overflow past that
+     line just paints outside the box, which is harmless while invisible. */
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.ntz-panel.is-notify .ntz-notify-title {
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .ntz-notify-label {
@@ -983,7 +1007,14 @@ body.is-modal-open {
   color: rgba(238, 236, 229, 0.7);
   opacity: 0;
   transform: translateX(24px);
+  /* Same reasoning as .ntz-notify-title above — stay single-line at rest
+     so the near-0-width column can't be inflated tall by wrapping. */
+  white-space: nowrap;
   transition: opacity 0.5s ease 0.1s, transform 0.55s cubic-bezier(.22,.61,.36,1) 0.1s;
+}
+
+.ntz-panel.is-notify .ntz-notify-body {
+  white-space: normal;
 }
 
 .ntz-panel.is-notify .ntz-notify-body {
@@ -1030,12 +1061,11 @@ body.is-modal-open {
    frame later to trigger this transition from the offset state back
    to normal. */
 .paper-page-content {
-  transition: opacity 0.28s ease, transform 0.32s cubic-bezier(.22, 1, .36, 1);
+  transition: opacity 0.28s ease;
 }
 
 .paper-page-content.is-page-entering {
   opacity: 0;
-  transform: translateY(14px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1123,15 +1153,111 @@ body.is-modal-open {
 .gen-note {
   margin: 0 2px;
   min-height: 0;
+  align-items: flex-start;
+  gap: 8px;
   font-family: var(--font-body);
   font-size: 12px;
   line-height: 1.4;
-  color: rgba(238, 236, 229, 0.55);
+  color: rgba(238, 236, 229, 0.6);
   display: none;
 }
 
 .gen-note.is-visible {
-  display: block;
+  display: flex;
+}
+
+.gen-note-icon {
+  display: none;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: rgba(238, 236, 229, 0.5);
+}
+
+/* Only the redesigned (Pre-Alpha2.5+/genNoteV2) position gets the
+   warning icon — older versions never move #genNote into
+   .game-card-actions in the first place (see script.js), so this
+   selector alone is enough to gate it correctly without a separate
+   JS-added class. */
+.game-card-actions > .gen-note .gen-note-icon {
+  display: flex;
+}
+
+.gen-note-text {
+  flex: 1;
+}
+
+@keyframes gen-note-char-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.gen-note-char {
+  display: inline-block;
+  opacity: 0;
+  animation: gen-note-char-in 0.35s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+/* Fires once the whole line has finished flying/fading into place
+   (timed from JS — see setNoteText) — a slow, smooth fade-out/fade-in
+   pulse so the TEXT keeps catching the eye instead of just quietly
+   sitting there once it settles. Loops forever (not a fixed count) and
+   only touches the text itself — the warning icon next to it stays put
+   at full opacity throughout. */
+@keyframes gen-note-text-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.gen-note-text.is-attention {
+  animation: gen-note-text-pulse 1.8s ease-in-out infinite;
+}
+
+/* Pre-Alpha2.5+ (genNoteV2): script.js moves #genNote to be the last
+   CHILD of .game-card-actions (not just a sibling after it) — that
+   keeps it in the exact same grid cell as the Play/Copy row in .is-v2's
+   layout, instead of falling into a new grid row that only starts once
+   the (much taller, image-spanning) row above it finishes. Turning
+   .game-card-actions into a wrapping flex row and giving the note
+   flex-basis:100% makes it drop to its own line right under the
+   buttons, still inside that same cell — no dependency on the image's
+   height either way. Scoped via the child combinator so this only
+   matches once script.js has actually relocated it there; a version
+   without the flag leaves #genNote in its original spot untouched. */
+.game-card-actions {
+  flex-wrap: wrap;
+  /* Without this, when the flex container ends up taller than its
+     content needs (common in .is-v2 — the image column is taller than
+     the button+note column), the default multi-line packing spreads
+     the wrapped button-row and note-row apart to fill that space. This
+     keeps them packed together at the top instead. */
+  align-content: flex-start;
+}
+
+.game-card-actions > .gen-note {
+  flex: 1 1 100%;
+  width: 100%;
+  order: 1;
+  margin: 2px 0 0;
+  padding: 10px 14px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(0);
+  transition: transform 0.2s ease;
+}
+
+/* The cursor-following tooltip (.float-tip) shows up right around here
+   when hovering Play — nudge the note down a little just to leave it
+   some breathing room instead of the tooltip sitting flush on top of
+   it. A transform (not margin) on purpose — it only shifts this box
+   visually, it doesn't change the card's actual height, so nothing
+   below it (the discovery rows, page-dock...) shifts along with it.
+   Copy/beta (.gen-btn-icon) intentionally left out — their tooltip
+   sits fine without pushing the note around for those two. */
+.game-card-actions:has(.gen-btn:hover) > .gen-note {
+  transform: translateY(16px);
 }
 
 .game-card {
@@ -1184,6 +1310,20 @@ body.is-modal-open {
   display: block;
 }
 
+/* Resetting the <img> back to no-src for a new loading cycle (see
+   script.js) is fine on the very first card ever shown — that <img>
+   never had a real src, so there's nothing to go "broken". But from the
+   2nd game onward, this same <img> DID just finish showing a real,
+   successfully-loaded picture; clearing its src at that point makes the
+   browser treat it as a broken image (not merely an empty one) and paint
+   its native broken-image glyph in the corner, on top of the shimmer,
+   until the next real src is set. Hiding the element outright while
+   loading sidesteps that regardless of which browser's broken-image
+   rendering it is. */
+.game-card.is-card-loading .game-card-thumb {
+  opacity: 0;
+}
+
 .game-card-thumb-wrap.is-loading {
   animation: game-thumb-pulse 1.2s ease-in-out infinite;
 }
@@ -1201,6 +1341,19 @@ body.is-modal-open {
   background-color: rgba(255, 255, 255, 0.28);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 5.5h-17A1.5 1.5 0 0 0 2 7v10a1.5 1.5 0 0 0 1.5 1.5h17A1.5 1.5 0 0 0 22 17V7a1.5 1.5 0 0 0-1.5-1.5ZM8 15l2.5-3 1.8 2.2L15 10l4 5H8Z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 5.5h-17A1.5 1.5 0 0 0 2 7v10a1.5 1.5 0 0 0 1.5 1.5h17A1.5 1.5 0 0 0 22 17V7a1.5 1.5 0 0 0-1.5-1.5ZM8 15l2.5-3 1.8 2.2L15 10l4 5H8Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Pre-Alpha2.5+ (.is-polished): plain neutral box instead, no glyph —
+   overrides the fallback glyph above but only for cards with the flag. */
+.game-card.is-polished .game-card-thumb-wrap.is-fallback::after {
+  display: none;
+}
+
+/* Belt-and-suspenders: never show the fallback glyph while the skeleton
+   shimmer is active, regardless of is-polished or any class-timing race
+   that might otherwise leave is-fallback set during is-card-loading. */
+.game-card.is-card-loading .game-card-thumb-wrap.is-fallback::after {
+  display: none;
 }
 
 /* Share / VIP-server links we can't (yet) resolve into a real preview —
@@ -1258,6 +1411,108 @@ body.is-modal-open {
   50% { background-color: rgba(255, 255, 255, 0.12); }
 }
 
+/* ── Pre-Alpha2.5+: skeleton loading (skeletonLoading feature) ──
+   While the card is loading, its pieces render as empty frames with a
+   shimmer sweep instead of literal "Đang tải..." text + a plain pulsing
+   box. Each piece fades/rises in with a slight stagger (thumb → name →
+   creator → stats → description → buttons), reading as the layout
+   assembling itself; the moment real data arrives, .is-card-loading is
+   removed and everything settles straight into its real content — no
+   extra "exit" animation needed since the underlying elements are the
+   real ones the whole time, just recolored while empty.
+   Scoped entirely under .is-skel — a version without the feature flag
+   never gets that class, so it keeps the old text/pulse behavior
+   completely untouched. */
+@keyframes skel-shimmer {
+  0% { background-position: 150% 0; }
+  100% { background-position: -50% 0; }
+}
+
+@keyframes skel-piece-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.game-card.is-skel.is-card-loading .game-card-thumb-wrap,
+.game-card.is-skel.is-card-loading .game-card-name,
+.game-card.is-skel.is-card-loading .game-card-creator,
+.game-card.is-skel.is-card-loading .game-card-stat,
+.game-card.is-skel.is-card-loading .game-card-description,
+.game-card.is-skel.is-card-loading .gen-btn-join,
+.game-card.is-skel.is-card-loading .gen-btn-icon,
+.game-card.is-skel.is-card-loading .gen-note {
+  color: transparent !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(255, 255, 255, 0.06);
+  background-image: linear-gradient(100deg,
+    rgba(255, 255, 255, 0.05) 20%,
+    rgba(255, 255, 255, 0.18) 50%,
+    rgba(255, 255, 255, 0.05) 80%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skel-shimmer 1.6s ease-in-out infinite, skel-piece-in 0.35s ease both;
+  pointer-events: none;
+}
+
+.game-card.is-skel.is-card-loading .game-card-thumb-wrap { animation-delay: 0s, 0s; }
+.game-card.is-skel.is-card-loading .game-card-name { animation-delay: 0s, 0.05s; }
+.game-card.is-skel.is-card-loading .game-card-creator { animation-delay: 0s, 0.1s; }
+.game-card.is-skel.is-card-loading .game-card-stat { animation-delay: 0s, 0.15s; }
+.game-card.is-skel.is-card-loading .game-card-description { animation-delay: 0s, 0.2s; }
+.game-card.is-skel.is-card-loading .gen-btn-join,
+.game-card.is-skel.is-card-loading .gen-btn-icon { animation-delay: 0s, 0.25s; }
+.game-card.is-skel.is-card-loading .gen-note { animation-delay: 0s, 0.3s; }
+
+/* Turn the real text/icons into fixed-shape empty bars/pills while
+   loading — width is deliberate here (not derived from the placeholder
+   text), so every card skeletonizes to the same tidy shape regardless
+   of how long the previous game's name/stats happened to be. */
+.game-card.is-skel.is-card-loading .game-card-name {
+  display: inline-block;
+  width: 62%;
+  min-height: 1.3em;
+  border-radius: 6px;
+}
+
+.game-card.is-skel.is-card-loading .game-card-creator {
+  display: inline-block;
+  width: 38%;
+  min-height: 1em;
+  border-radius: 5px;
+}
+
+.game-card.is-skel.is-card-loading .game-card-stat {
+  width: 68px;
+  overflow: hidden;
+}
+
+.game-card.is-skel.is-card-loading .game-card-stat svg {
+  opacity: 0;
+}
+
+.game-card.is-skel.is-card-loading .game-card-description {
+  display: block;
+  width: 90%;
+  min-height: 1.3em;
+  border-radius: 6px;
+  -webkit-line-clamp: unset;
+}
+
+/* Forced visible (regardless of whether this particular load will end
+   up having a note or not) so it's part of the "assembling" set like
+   everything else — once real data lands, the normal is-visible toggle
+   in script.js takes back over and hides it again if there's no note
+   this time. */
+.game-card.is-skel.is-card-loading .gen-note {
+  display: flex;
+  min-height: 1.2em;
+  border-radius: 3px;
+}
+
+.game-card.is-skel.is-card-loading .gen-note-icon {
+  opacity: 0;
+}
+
 .game-card-info {
   flex: 1;
   min-width: 0;
@@ -1286,13 +1541,11 @@ body.is-modal-open {
 }
 
 .game-card-creator {
+  min-width: 0;
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 500;
   color: rgba(238, 236, 229, 0.6);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .game-card-verified {
@@ -1300,6 +1553,31 @@ body.is-modal-open {
   width: 14px;
   height: 14px;
   color: var(--accent);
+}
+
+.game-card-verified-v2 {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  min-height: 15px;
+  max-width: 15px;
+  max-height: 15px;
+  cursor: default;
+  outline: none;
+}
+
+.game-card-verified-v2-icon {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .game-card-stats {
@@ -1328,6 +1606,47 @@ body.is-modal-open {
   width: 13px;
   height: 13px;
   flex-shrink: 0;
+}
+
+/* Pre-Alpha2.5+: a small lift + soft glow on hover — noticeably
+   lighter/softer than the Play button's own hover treatment, since
+   these are secondary at-a-glance stats, not a call to action. Likes
+   and playing count get a fixed tint each; visits' tint instead comes
+   from a `data-tier` attribute script.js sets based on the actual
+   count (see getVisitsTier in script.js), so a game with a handful of
+   visits doesn't glow the same triumphant gold as one with billions. */
+.game-card.is-polished .game-card-stat {
+  transition: transform 0.3s cubic-bezier(.22, 1, .36, 1), box-shadow 0.3s ease;
+}
+
+.game-card.is-polished #gameLikeStat:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 14px -6px rgba(127, 162, 255, 0.4);
+}
+
+.game-card.is-polished #gamePlayingStat:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 14px -6px rgba(255, 255, 255, 0.28);
+}
+
+.game-card.is-polished #gameVisitsStat:hover {
+  transform: translateY(-3px);
+}
+
+.game-card.is-polished #gameVisitsStat[data-tier="low"]:hover {
+  box-shadow: 0 6px 14px -6px rgba(210, 210, 210, 0.28); /* under 1M — plain/neutral */
+}
+
+.game-card.is-polished #gameVisitsStat[data-tier="mid"]:hover {
+  box-shadow: 0 6px 14px -6px rgba(127, 162, 255, 0.4); /* 1M–99M */
+}
+
+.game-card.is-polished #gameVisitsStat[data-tier="high"]:hover {
+  box-shadow: 0 6px 14px -6px rgba(196, 138, 255, 0.42); /* 100M–9.9B */
+}
+
+.game-card.is-polished #gameVisitsStat[data-tier="legend"]:hover {
+  box-shadow: 0 6px 14px -6px rgba(255, 191, 82, 0.48); /* 10B+ */
 }
 
 .game-card-description {
@@ -1485,6 +1804,15 @@ body.is-modal-open {
 .game-card.is-v2 .game-card-verified {
   width: clamp(11px, 2.2cqi, 15px);
   height: clamp(11px, 2.2cqi, 15px);
+}
+
+.game-card.is-v2 .game-card-verified-v2 {
+  width: clamp(11px, 2.2cqi, 15px);
+  height: clamp(11px, 2.2cqi, 15px);
+  min-width: clamp(11px, 2.2cqi, 15px);
+  min-height: clamp(11px, 2.2cqi, 15px);
+  max-width: clamp(11px, 2.2cqi, 15px);
+  max-height: clamp(11px, 2.2cqi, 15px);
 }
 
 .game-card.is-v2 .game-card-stats {
@@ -1684,8 +2012,531 @@ body.is-modal-open {
   -webkit-box-orient: vertical;
 }
 
+/* Pre-Alpha2.5+ (minimalDiscoveryCards): stripped-down variant of
+   .related-card — just a square frame with the image centered inside
+   at 98% size, no name, no play button, no padding. Applies to both
+   the "Kết quả khác" cards and the discovery-row cards, since they
+   share this same base design. Older versions never get the
+   `is-compact` class (see script.js), so they keep the original card
+   untouched. */
+.related-card.is-compact {
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  aspect-ratio: 1 / 1;
+  border-radius: 2px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.related-card.is-compact:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.related-card.is-compact .related-card-thumb {
+  width: 98%;
+  height: 98%;
+  aspect-ratio: unset;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.related-card.is-compact .related-play-btn {
+  display: none;
+}
+
+/* Name comes back as a caption overlay instead of a separate line below
+   the image — dark gradient fade behind it (not a flat block) so it
+   reads clearly over any image without hard-edging across the corner.
+   Sized to the text itself (1 line, ellipsis if too long), not the
+   whole card width, so it doesn't dominate the tiny frame. */
+.related-card.is-compact .related-card-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 0 8px 6px;
+  padding-top: 30%; /* scales the gradient area with the card's own size */
+  /* Two stacked gradients so the darkness concentrates at the bottom-left
+     corner (where the text sits) and fades out both upward AND toward
+     the right — a single top-to-bottom fade left the right side of the
+     image just as dark as the left, even far from the text. The
+     left-to-right one is sized/positioned to only the bottom slice of
+     this box (roughly matching the text's own height) instead of the
+     full gradient area — it was reaching noticeably higher than the
+     text needed. */
+  background-image:
+    linear-gradient(to top, rgba(4, 5, 7, 0.7) 0%, rgba(4, 5, 7, 0.45) 45%, rgba(4, 5, 7, 0) 100%),
+    linear-gradient(to right, rgba(4, 5, 7, 0.2) 0%, rgba(4, 5, 7, 0) 70%);
+  background-position: 0 0, bottom left;
+  background-size: 100% 100%, 100% 30%;
+  background-repeat: no-repeat, no-repeat;
+  color: var(--paper);
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: clamp(4px, 7cqw, 24px);
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: left;
+  display: flex;
+  align-items: flex-end;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+  pointer-events: none;
+}
+
 .related-games-grid.is-loading .related-card {
   opacity: 0.5;
+}
+
+/* ── Pre-Alpha2.5+ (cardHoverPreview): floating glass hover-preview ──
+   One reusable panel, appended to <body> (not nested inside the
+   scrolling row — so it's never clipped by the row's overflow, and
+   isn't tied to that row's stacking/scroll context). Sized to its OWN
+   fixed width/height (see PREVIEW_WIDTH/PREVIEW_HEIGHT in script.js —
+   no longer tied to the hovered card's own rendered width), centered
+   on that card's center via `getBoundingClientRect()`, and animated
+   growing out from the card's actual box to that fixed size. The
+   original card just goes `visibility: hidden` for the duration,
+   leaving its own spot as a plain gap (not collapsed, not
+   duplicated). */
+/* Ambient glow — a blurred, oversized copy of the same thumbnail
+   sitting just behind the real panel (see previewGlowEl in script.js),
+   like a YouTube-style light bleeding out from the art itself rather
+   than a flat colored shadow. Scaled up + heavily blurred + desaturated
+   toward the edges reads as glow, not as a second visible image. */
+.card-hover-preview-glow {
+  position: fixed;
+  z-index: 59;
+  border-radius: 2px;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.85);
+  filter: blur(20px) saturate(160%) brightness(1.05);
+  /* Opacity itself only starts tweening 0.2s after showFor() flips this
+     to .is-visible — a short pause before the glow starts fading in,
+     rather than starting immediately alongside the size/position burst. */
+  transition: opacity 0.28s ease 0.2s,
+              transform 0.34s cubic-bezier(.16, 1, .3, 1),
+              top 0.34s cubic-bezier(.16, 1, .3, 1), left 0.34s cubic-bezier(.16, 1, .3, 1),
+              width 0.34s cubic-bezier(.16, 1, .3, 1), height 0.34s cubic-bezier(.16, 1, .3, 1);
+}
+
+/* Separate, much snappier fade-out — applied the instant the
+   shrink-back begins (see hide() in script.js), instead of lingering
+   at partial opacity for the whole 320ms shrink and only actually
+   disappearing at the very end. Distinct from the entrance transition
+   above, which stays a proper tween. No delay here — closing should
+   start fading immediately, not wait 0.2s like the entrance does. */
+.card-hover-preview-glow.is-hiding {
+  transition: opacity 0.1s ease, transform 0.34s cubic-bezier(.16, 1, .3, 1),
+              top 0.34s cubic-bezier(.16, 1, .3, 1), left 0.34s cubic-bezier(.16, 1, .3, 1),
+              width 0.34s cubic-bezier(.16, 1, .3, 1), height 0.34s cubic-bezier(.16, 1, .3, 1);
+}
+
+.card-hover-preview-glow.is-visible {
+  opacity: 0.5;
+  transform: scale(1.04);
+}
+
+.card-hover-preview-glow.is-visible.is-expanding {
+  opacity: 0.75;
+  transform: scale(1.08);
+}
+
+.card-hover-preview {
+  position: fixed;
+  z-index: 60;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 2px;
+  /* Matches .related-card.is-compact exactly at rest — for the brief
+     "snap" instant (.is-visible without .is-expanding yet, see
+     script.js), this frame is genuinely indistinguishable from the
+     real card sitting in the row. The frosted-glass look only exists
+     in .is-visible.is-expanding below, and transitions into place
+     right alongside the size burst rather than being there from the
+     start. */
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  opacity: 0;
+  pointer-events: none;
+  /* Fast-then-slow curve — the burst kicks off immediately at nearly
+     full speed, then eases off gently as it settles into the final
+     size, rather than building up gradually. */
+  transition: opacity 0.15s ease,
+              top 0.34s cubic-bezier(.16, 1, .3, 1), left 0.34s cubic-bezier(.16, 1, .3, 1),
+              width 0.34s cubic-bezier(.16, 1, .3, 1), height 0.34s cubic-bezier(.16, 1, .3, 1),
+              background-color 0.3s ease, border-color 0.3s ease,
+              box-shadow 0.3s ease, backdrop-filter 0.3s ease;
+}
+
+.card-hover-preview.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The frosted-glass treatment — only kicks in once the burst-expand
+   actually starts, tweening in alongside the caption's fade/sink and
+   the name+Play body's reveal below, instead of being there from the
+   very first frame. */
+.card-hover-preview.is-visible.is-expanding {
+  border-color: rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.02) 30%, rgba(255, 255, 255, 0) 55%),
+    rgba(20, 22, 30, 0.4);
+  backdrop-filter: blur(20px) saturate(200%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%);
+  box-shadow: 0 30px 70px -18px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06),
+              inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Square image block sized to 98% of the panel's own width (same
+   proportion the .is-compact card itself uses) and pinned to the top
+   — NOT stretched to fill the rest of the (now taller) panel, so the
+   image always shows completely (`object-fit: contain`, not `cover`)
+   instead of being cropped to fit a taller box. container-type lives
+   on .card-hover-preview itself (not here) so the caption's `cqw`
+   font-size tracks the PANEL's own width the same way the real
+   is-compact card's does (container-type there sits on the card
+   itself, not on some inner wrapper) — sizing them off different
+   bases was making the two fonts drift out of proportion. */
+.card-hover-preview-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 98%;
+  aspect-ratio: 1 / 1;
+  margin: 1% auto 0;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.card-hover-preview-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Deliberately copied 1:1 from .related-card.is-compact .related-card-
+   name — at the instant the panel first snaps to the original card's
+   exact box (before .is-visible's transition kicks in), this makes it
+   genuinely indistinguishable from the card itself. It's the ONLY name
+   element in this panel — as the panel then expands, this same node
+   tweens its own position/size down to sit as a plain label under the
+   image (see .is-expanding below), rather than fading out to hand off
+   to a separate "real" name element. Positioned relative to the whole
+   panel (not .card-hover-preview-thumb, which clips) so it's free to
+   travel past the image's own bottom edge into the body area below. */
+.card-hover-preview-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 2;
+  margin: 0;
+  padding: 0 8px 6px;
+  padding-top: 30%;
+  background-image:
+    linear-gradient(to top, rgba(4, 5, 7, 0.7) 0%, rgba(4, 5, 7, 0.45) 45%, rgba(4, 5, 7, 0) 100%),
+    linear-gradient(to right, rgba(4, 5, 7, 0.2) 0%, rgba(4, 5, 7, 0) 70%);
+  background-position: 0 0, bottom left;
+  background-size: 100% 100%, 100% 30%;
+  background-repeat: no-repeat, no-repeat;
+  color: var(--paper);
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: clamp(4px, 7cqw, 24px);
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: left;
+  display: flex;
+  align-items: flex-end;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transform: translateY(-100%);
+  transition: top 0.34s cubic-bezier(.16, 1, .3, 1), transform 0.34s cubic-bezier(.16, 1, .3, 1);
+}
+
+/* Only kicks in once the burst-expand actually starts (is-expanding) —
+   at the moment it's merely snapped+visible (is-visible alone, matching
+   the original card's exact box), this sits exactly as it does on the
+   real is-compact card (top:100%/translateY(-100%) = pinned to the
+   bottom edge). Expanding slides it down AND shrinks it back to a
+   normal compact label.
+   Sized in cqw (proportional to the panel's own width) rather than
+   fixed px — the preview panel's actual size varies a lot with viewport
+   width (it's only a small fixed bump over the original small card's
+   size, see WIDTH_EXTRA in script.js), so a fixed-px label + a
+   fixed-px Play button below it could fit fine on a wide screen but
+   collide on a narrower one, where the leftover space under the image
+   shrinks a lot more than either element did. Scaling both keeps them
+   proportional to that leftover space at any size — verified by
+   rendering the actual page at several widths, not just assumed. */
+.card-hover-preview.is-visible.is-expanding .card-hover-preview-caption {
+  top: 54%;
+  transform: translateY(0);
+}
+
+/* Play button row — fills whatever's left below where the caption lands
+   (~26% of the panel's height, see .card-hover-preview-caption above).
+   Fades/slides in a beat after the panel itself starts expanding, so it
+   reads as "revealed by the growth" rather than popping in instantly
+   alongside it. */
+.card-hover-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 1.6cqw 0 3px;
+  opacity: 0;
+  transform: translateY(24px);
+  /* Exit transition — fast, no delay. Active whenever is-expanding
+     ISN'T present, which includes the instant it gets removed at the
+     start of shrink-back (see hide() in script.js), so the Play button
+     drops down and fades out right away instead of waiting for the
+     panel's own delayed is-visible removal at the very end. */
+  transition: opacity 0.15s ease, transform 0.2s ease;
+}
+
+.card-hover-preview.is-visible.is-expanding .card-hover-preview-body {
+  opacity: 1;
+  transform: translateY(0);
+  /* Enter transition — slower, staggered a beat after the burst-expand
+     starts, so it reads as "revealed by the growth" rather than
+     popping in instantly alongside it. */
+  transition: opacity 0.25s ease 0.14s, transform 0.32s cubic-bezier(.22, 1, .36, 1) 0.14s;
+}
+
+.card-hover-preview-play {
+  position: relative;
+  z-index: 0;
+  width: 98%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(clamp(15px, 11cqw, 38px) + 24px);
+  border-radius: 2px;
+  border: none;
+  cursor: pointer;
+  /* Plain blue at rest — same tone as the site's real Play button, so
+     it still reads as "Play" at a glance. The cinematic look below only
+     shows up on hover, layered on top of this rather than replacing
+     it. */
+  background: linear-gradient(135deg, #7fa2ff, #3f66e6);
+  color: #fff;
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-weight: 800;
+  font-size: clamp(8px, 3.6cqw, 12.5px);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  transition: transform 0.2s cubic-bezier(.22, 1, .36, 1), box-shadow 0.3s ease;
+}
+
+/* Cinematic COLOR-GRADED layer — deliberately NOT the same treatment as
+   the panel's own ambient glow (a plain blurred/darkened copy of the
+   thumbnail): this one blends the same image with a bold teal↔orange
+   duotone via background-blend-mode (the classic movie-poster grading
+   look), so the button reads as its own distinct "graded" effect rather
+   than a smaller echo of the glow already happening behind it. Bigger
+   than the button itself so it spills out past its edges on hover. */
+.card-hover-preview-play::before {
+  content: '';
+  position: absolute;
+  inset: -38%;
+  z-index: 1;
+  border-radius: inherit;
+  background-image:
+    linear-gradient(135deg, rgba(0, 220, 255, 0.55), rgba(255, 110, 0, 0.5)),
+    var(--play-glow-image, none);
+  background-size: cover;
+  background-position: center;
+  background-blend-mode: color-dodge, normal;
+  filter: blur(18px) saturate(220%) contrast(1.15) brightness(0.85);
+  transform: scale(0.82) rotate(-2deg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.35s ease, filter 0.35s ease;
+}
+
+.card-hover-preview-play:hover::before {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+  filter: blur(13px) saturate(260%) contrast(1.3) brightness(1.05);
+}
+
+/* Diagonal "shiny" sweep on hover — same technique as the real Play
+   button's (.gen-btn-join) shine, just reused here. */
+.card-hover-preview-play::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  overflow: hidden;
+  background: linear-gradient(115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.55) 48%,
+    rgba(255, 255, 255, 0.14) 54%,
+    transparent 70%);
+  background-size: 250% 100%;
+  background-position: 150% 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The "wow": a real lift plus a two-tone glowing shadow (echoing the
+   teal/orange grade above) that keeps gently breathing while hovered,
+   instead of a single static shadow value. */
+.card-hover-preview-play:hover {
+  transform: translateY(-4px) scale(1.015);
+  animation: card-hover-play-pulse 1.6s ease-in-out infinite;
+}
+
+.card-hover-preview-play:hover::after {
+  opacity: 1;
+  animation: card-hover-play-shine 0.85s ease forwards;
+}
+
+@keyframes card-hover-play-shine {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+@keyframes card-hover-play-pulse {
+  0%, 100% {
+    box-shadow:
+      0 16px 32px -12px rgba(0, 220, 255, 0.45),
+      0 6px 20px -6px rgba(255, 110, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 22px 42px -12px rgba(0, 220, 255, 0.6),
+      0 8px 26px -6px rgba(255, 110, 0, 0.55),
+      0 0 0 1px rgba(255, 255, 255, 0.16);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-hover-preview-play:hover {
+    animation: none;
+    box-shadow:
+      0 16px 32px -12px rgba(0, 220, 255, 0.45),
+      0 6px 20px -6px rgba(255, 110, 0, 0.4);
+  }
+}
+
+.card-hover-preview-play svg {
+  position: relative;
+  z-index: 3;
+  height: 98%;
+  width: auto;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+}
+
+/* The card a preview is currently standing in for — hidden but still
+   occupying its normal spot in the row (visibility, not display), so
+   nothing around it reflows. */
+.is-compact.is-preview-source {
+  visibility: hidden;
+}
+
+/* "Trending now" / "picks for you" — sit right under the search bar,
+   each one row of `.related-card`s (same look, so it doesn't feel like
+   a third card style) that scrolls sideways instead of wrapping into a
+   grid. Hidden by default (JS only reveals them once the daily-cached
+   data is actually ready) and hidden again the moment the person starts
+   typing — see the [hidden] override in the base stylesheet for why
+   plain `hidden` reliably means "gone" here despite `display:flex`
+   below. */
+.discovery-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 4px 0 2px;
+}
+
+.discovery-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.discovery-label {
+  margin: 0 2px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(238, 236, 229, 0.45);
+}
+
+.discovery-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  margin: 0 -2px;
+  padding-left: 2px;
+  padding-right: 2px;
+  /* Thin, unobtrusive scrollbar on browsers that support styling it
+     (Cốc Cốc/Chrome do) — still scrolls fine everywhere without it. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.discovery-row::-webkit-scrollbar {
+  height: 5px;
+}
+
+.discovery-row::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+
+.discovery-row:empty {
+  display: none;
+}
+
+.discovery-card {
+  flex: 0 0 auto;
+  width: calc((100% - 30px) / 4);
+  scroll-snap-align: start;
+}
+
+@media (max-width: 520px) {
+  .discovery-card {
+    width: calc((100% - 3 * 8px) / 4);
+  }
+
+  .discovery-row {
+    gap: 8px;
+  }
 }
 
 .gen-btn-join {
@@ -1699,6 +2550,227 @@ body.is-modal-open {
   background: #93b3ff;
   border-color: #93b3ff;
   transform: translateY(-1px);
+}
+
+/* ── Pre-Alpha2.5+ (.is-polished): redesigned Play button ──
+   Gradient fill + a diagonal "shiny" sweep on hover, plus a stronger
+   lift and glow. Scoped under .is-polished so it layers on top of (and
+   fully overrides) the plain accent-color button above — a version
+   without the flag never gets this class and keeps that plain button
+   untouched. */
+.game-card.is-polished .gen-btn-join {
+  position: relative;
+  background: linear-gradient(135deg, #7fa2ff, #3f66e6);
+  border-color: transparent;
+  color: #fff;
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.015em;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+  z-index: 0;
+  --play-mx: 50%;
+  --play-my: 50%;
+  transition: transform 0.35s cubic-bezier(.22, 1, .36, 1),
+              box-shadow 0.35s cubic-bezier(.22, 1, .36, 1),
+              background 0.3s ease;
+}
+
+/* Diagonal light band, swept across on hover for a quick "shiny" pass
+   rather than a static highlight. Clips to its own border-radius now
+   (the button itself no longer has overflow: hidden — that would also
+   have clipped the outer glow below, which needs to render past the
+   button's edges). */
+.game-card.is-polished .gen-btn-join::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  overflow: hidden;
+  background: linear-gradient(115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.5) 48%,
+    rgba(255, 255, 255, 0.12) 54%,
+    transparent 70%);
+  background-size: 250% 100%;
+  background-position: 150% 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Cursor-tracking border ring: rendered in a SEPARATE fixed-position
+   element appended to <body> (see script.js), not as part of the
+   button itself.
+
+   Why: `.game-card.is-v2` uses `container-type: inline-size` for its
+   cqi-based proportional scaling. Per spec, any element with
+   `container-type: size`/`inline-size` gets an implicit forced clip
+   on its own box — browsers apply this unconditionally to guarantee
+   the containment the container-query system depends on, and an
+   author-supplied `overflow: visible` on that same element is
+   ignored. That clip applies to every descendant, however deeply
+   nested, so nothing painted past `.game-card`'s own edges — like
+   this ring/glow extending outside the button — can ever show up
+   inside it, no matter what overflow/z-index tricks are used ON the
+   button itself. The only way out is to not be a descendant of
+   `.game-card` at all: `#playRingPortal` lives directly under <body>,
+   and script.js syncs its position/size to the button's
+   getBoundingClientRect() on hover and pointer move. */
+#playRingPortal {
+  position: fixed;
+  z-index: 16;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+#playRingPortal.is-visible {
+  opacity: 1;
+}
+
+/* The ring itself: gradient fills the whole box, then a mask (XOR of
+   a content-box shape and a border-box shape) cuts a hollow ring out
+   of it, leaving only the border's own thickness visible. */
+#playRingPortal::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 4px; /* button's own 3px + the 1px outward offset, so the corner arc stays concentric with the button's corner */
+  padding: 1px;
+  background: radial-gradient(160px circle at var(--play-mx) var(--play-my), #143a9e, rgba(20, 58, 158, 0) 72%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* Pre-Alpha2.5+: the "Join <name>" / "Copy Game" / "Save Game" label
+   that appears under the Play/Copy/beta buttons on hover. Same reason
+   as #playRingPortal above for living outside .game-card entirely —
+   script.js repositions it under whichever of the three is currently
+   hovered. Starts tucked right against the button and eases down
+   into place, following the same direction the button itself lifts
+   away in, so the two motions read as one continuous reveal. */
+#btnTooltipPortal {
+  position: fixed;
+  z-index: 17;
+  transform: translate(-50%, 2px);
+  margin-top: 4px;
+  padding: 4px 10px;
+  border-radius: 1px;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.09), rgba(10, 12, 17, 0.25) 55%);
+  backdrop-filter: blur(6px) saturate(180%);
+  -webkit-backdrop-filter: blur(6px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 4px 12px -6px rgba(0, 0, 0, 0.4);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(.22, 1, .36, 1);
+}
+
+#btnTooltipPortal.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 8px);
+}
+
+.game-card.is-polished .gen-btn-join > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* Icon pinned to the left edge, taken out of flex flow — so the PLAY
+   text (the only remaining flex child) centers on the button's true
+   midpoint instead of the icon+gap+text group's midpoint. Moving/
+   resizing the icon here never shifts the text. */
+.game-card.is-polished .gen-btn-join svg {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+
+.game-card.is-polished .gen-btn-join:hover {
+  transform: translateY(-7px);
+  background: linear-gradient(135deg, #8fb0ff, #4d72ea);
+  box-shadow: 0 22px 38px -12px rgba(127, 162, 255, 0.65),
+              0 0 0 1px rgba(127, 162, 255, 0.3),
+              0 0 30px rgba(127, 162, 255, 0.35);
+}
+
+.game-card.is-polished .gen-btn-join:hover::before {
+  opacity: 1;
+  animation: gen-btn-join-shine 0.85s ease forwards;
+}
+
+@keyframes gen-btn-join-shine {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+/* Pre-Alpha2.5+: sharp 3px corners on the game thumbnail, and on the
+   Play/Copy/beta-slot buttons — overriding both the plain base radius
+   and the .is-v2 clamp() radius above — same .is-polished scope as
+   the Play-button redesign. */
+.game-card.is-polished .game-card-thumb-wrap,
+.game-card.is-polished .gen-btn,
+.game-card.is-polished .gen-btn-icon,
+.game-card.is-v2.is-polished .gen-btn-join,
+.game-card.is-v2.is-polished .gen-btn-icon {
+  border-radius: 3px;
+}
+
+/* Copy / beta buttons: a lighter lift than the Play button (-5px vs
+   -7px) with a soft neutral glow — secondary actions, not the CTA, so
+   the treatment reads as related but clearly a step down in emphasis. */
+.game-card.is-polished .gen-btn-icon {
+  transition: transform 0.3s cubic-bezier(.22, 1, .36, 1), box-shadow 0.3s ease,
+              background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.game-card.is-polished .gen-btn-icon:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px -8px rgba(0, 0, 0, 0.5), 0 0 14px -4px rgba(255, 255, 255, 0.22);
+}
+
+/* Pre-Alpha2.5+: narrow band of card widths where this crowds.
+   Above ~700px the layout is still 2-column (below that, the
+   @container rule further down switches to a stacked design instead
+   — a genuinely different fix, not this one). The Play icon and PLAY
+   text are both pinned at their clamp() ceiling by ~545px of card
+   width, so from 700px up they stop shrinking — only the flex:1
+   button's actual width keeps shrinking as the card narrows toward
+   700px, which is what eventually pushes the fixed-size icon into
+   the fixed-size text. Squaring the button off (icon only, sized and
+   positioned exactly like the Copy/beta buttons next to it) reads as
+   a third icon button instead of overlapping content.
+   860px is an estimate for where there's comfortably enough room
+   again — nudge it if it doesn't quite match what you see in-browser. */
+@container (min-width: 700.01px) and (max-width: 860px) {
+  .game-card.is-v2 .gen-btn-join {
+    flex: 0 0 clamp(30px, 14cqi, 76px);
+    width: clamp(30px, 14cqi, 76px);
+    padding: 0;
+  }
+
+  .game-card.is-v2 .gen-btn-join span {
+    display: none;
+  }
+
+  .game-card.is-polished .gen-btn-join svg {
+    position: static;
+    left: auto;
+    top: auto;
+    transform: none;
+  }
 }
 
 @container (max-width: 700px) {
@@ -2132,4 +3204,279 @@ body.is-modal-open {
 
 .paper[hidden] {
   display: none;
+}
+
+/* ── Global cursor-following tooltip ──
+   A single shared frosted-glass frame appended straight to <body> —
+   deliberately outside every card/panel so it can never be clipped by
+   an ancestor's overflow, and can float over anything regardless of
+   which card triggered it. JS drives its position (follows the cursor)
+   and content; this file only owns how it looks. Font size is set
+   inline by JS to match whatever creator-name text is nearby, since
+   that value differs by card mode (v1 fixed vs v2 clamp()) and this
+   element lives outside that container-query context entirely. */
+.float-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: max-content;
+  white-space: nowrap;
+  padding: 5px 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 9, 12, 0.55);
+  backdrop-filter: blur(20px) saturate(110%);
+  -webkit-backdrop-filter: blur(20px) saturate(110%);
+  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  font-family: var(--font-body);
+  font-weight: 500;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 999;
+}
+
+.float-tip.is-visible {
+  opacity: 1;
+}
+
+/* ── Beta Settings panel (Shift+S) ──
+   Hidden dev/beta panel — Pre-Alpha2.5+ only (`betaSettingsPanel`
+   feature flag). Fixed, high z-index so it always floats above
+   everything else including the cursor tooltip. */
+.beta-settings {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 260px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 11, 15, 0.75);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.beta-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.beta-settings-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--paper);
+}
+
+.beta-settings-badge {
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: rgba(127, 162, 255, 0.18);
+  color: var(--accent);
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.beta-settings-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(238, 236, 229, 0.6);
+  cursor: pointer;
+}
+
+.beta-settings-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.beta-settings-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--paper);
+}
+
+.beta-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.beta-settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--paper);
+}
+
+.beta-settings-row-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(238, 236, 229, 0.45);
+}
+
+.beta-settings-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.beta-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.beta-settings-input {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.beta-settings-input::placeholder {
+  color: rgba(238, 236, 229, 0.35);
+}
+
+.beta-settings-input:focus {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.beta-settings-group-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.beta-settings-btn {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: 4px;
+  border: 1px solid rgba(127, 162, 255, 0.4);
+  background: rgba(127, 162, 255, 0.16);
+  color: var(--accent);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.beta-settings-btn:hover {
+  background: rgba(127, 162, 255, 0.28);
+}
+
+.beta-settings-btn-ghost {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: rgba(238, 236, 229, 0.6);
+}
+
+.beta-settings-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--paper);
+}
+
+.beta-settings-proxy-current {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(238, 236, 229, 0.45);
+  word-break: break-all;
+}
+
+.beta-settings-proxy-current.is-custom {
+  color: var(--accent);
+}
+
+.beta-settings-hint {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(238, 236, 229, 0.4);
+}
+
+.beta-settings-hint kbd {
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  font-family: var(--font-body);
+  font-size: 10px;
+}
+
+.beta-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+}
+
+.beta-toggle input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.beta-toggle-track {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: background 0.2s ease;
+}
+
+.beta-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--paper);
+  transition: transform 0.2s cubic-bezier(.22,1,.36,1);
+}
+
+.beta-toggle input:checked ~ .beta-toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.beta-toggle input:checked ~ .beta-toggle-track .beta-toggle-thumb {
+  transform: translateX(16px);
 }
