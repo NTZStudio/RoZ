@@ -181,12 +181,14 @@
           'Viết lại phần mô tả web: RoZ API là gì, dùng để làm gì (lấy dữ liệu + tạo link tham gia thẳng vào game Roblox từ 1 đường link, hỗ trợ cả Server VIP riêng tư)',
           'Đổi nội dung khung thông báo: tiêu đề "EARLY ACCESS OPEN", thông báo mở tính năng trải nghiệm thử cho RoZ, mở khóa xem lại các phiên bản cũ và mã nguồn mở 100%',
           'Thêm thanh chuyển trang (page dock) ở cuối màn hình',
-          'Thanh chuyển trang giờ có thể kéo sang trái/phải để đổi vị trí — kéo sát mép trái hoặc phải sẽ khoá cố định vào bên đó, thả ở giữa thì quay về chính giữa; vị trí đã chọn được ghi nhớ cho lần sau'
+          'Thanh chuyển trang giờ có thể kéo sang trái/phải để đổi vị trí — kéo sát mép trái hoặc phải sẽ khoá cố định vào bên đó, thả ở giữa thì quay về chính giữa; vị trí đã chọn được ghi nhớ cho lần sau',
+          'Thêm 2 khối gợi ý ngay dưới thanh search: "Đang được chơi nhiều nhất" và "Lựa chọn cho bạn hôm nay" — mỗi khối 1 hàng lướt ngang, chỉ tải 1 lần/ngày cho mỗi người (không tải lại khi F5 trong ngày), tự ẩn khi đang gõ tìm kiếm'
         ]
       },
       config: {
         features: {
-          pageDock: true
+          pageDock: true,
+          discoveryRows: true
         },
         ntzDesc: {
           lines: [
@@ -204,11 +206,103 @@
           ]
         }
       }
+    },
+    {
+      slug: 'pre-alpha2-5',
+      major: 'Pre-Alpha',
+      minor: '2.5',
+      name: 'Pre-Alpha2.5',
+      code: 'c14f9a',
+      // Con của Pre-Alpha2 — kế thừa toàn bộ (pageDock, discoveryRows,
+      // gameCardV2, ntzDesc/ntzNotify...). Chủ đề chính của bản này là
+      // redesign lại một số phần của giao diện — mỗi thay đổi cụ thể sẽ
+      // được thêm dần vào `changelog.items` và `config` bên dưới khi
+      // thực hiện (giữ nguyên slug/code này, không tạo version mới cho
+      // từng đợt nhỏ trong chủ đề redesign này).
+      extends: 'pre-alpha2',
+      changelog: {
+        icon: 'sparkles',
+        releasedAt: '2026-09-12T00:00:00+07:00',
+        devNote: 'Đợt redesign nhỏ cho Pre-Alpha2.5 — cập nhật dần, mỗi mục xong sẽ được thêm vào danh sách này.',
+        items: [
+          'Sửa tên nhà sáng tạo bị cắt cụt — tên dài giờ tự xuống dòng thay vì bị cắt "..."',
+          'Sửa dấu tích verified bị ẩn sai dù nhà sáng tạo có tích thật, thêm icon verified tuỳ chỉnh kèm tooltip',
+          'Tối ưu tốc độ lấy thông tin game — các lượt gọi chạy song song thay vì nối đuôi tuần tự',
+          'Làm lại hiệu ứng loading: chữ và ảnh đang tải hiện dạng khung rỗng có ánh sáng lướt qua (shimmer) thay vì chữ "Đang tải...", các khung xuất hiện lần lượt như đang dựng bố cục rồi chuyển mượt về nội dung thật khi tải xong',
+          'Bấm chọn 1 game bất kỳ (tìm kiếm, kết quả khác, hàng gợi ý cuộn ngang) sẽ tự cuộn trang lên đúng vị trí khung game hiện ra, không cần tự lướt lên nữa',
+          'Tìm theo tên: nhấn Enter, vừa dán, hoặc rời khỏi ô nhập khi có chữ sẽ tải ngay (bỏ qua độ trễ debounce 450ms), thay vì phải đợi im lặng một lúc mới thấy có phản hồi',
+          'Thiết kế tối giản hơn cho các ô game trong "Kết quả khác" và 2 hàng gợi ý — chỉ còn khung vuông + ảnh, bỏ tên game và nút Play chồng lên ảnh',
+          'Hover 1 ô game tối giản sẽ hiện khung kính mờ phóng to, xem ảnh to hơn + bấm Play ngay từ đó'
+        ]
+      },
+      config: {
+        features: {
+          // Dấu verified kiểu icon tùy chỉnh (thay cho ngôi sao khuyết
+          // SVG cũ) + tooltip kính mờ khi hover — chỉ bật ở bản này,
+          // các bản trước vẫn giữ nguyên icon ngôi sao khuyết cũ.
+          verifiedIconV2: true,
+          // Khung rỗng + hiệu ứng shimmer khi card đang tải (thay cho chữ
+          // "Đang tải..." + hiệu ứng pulse cũ). Chỉ bật từ bản này trở
+          // lên — các bản trước vẫn giữ nguyên hành vi cũ.
+          skeletonLoading: true,
+          // Bo góc 3px cho ảnh game/nút Play-Copy-nút phụ + nút Play đổi
+          // sang gradient xanh có hover glow/shine — chỉ bật từ bản này
+          // trở lên, các bản trước (kể cả Pre-Alpha1.3/Pre-Alpha2 tuy đã
+          // có `.is-v2`) vẫn giữ bo góc + nút màu accent phẳng như cũ.
+          polishedUI: true,
+          // Bấm chọn 1 game (tìm kiếm, kết quả khác, hàng gợi ý cuộn
+          // ngang...) sẽ tự cuộn trang lên đúng vị trí khung game chính
+          // xuất hiện — đỡ phải tự lướt lên tay, nhất là khi bấm từ
+          // hàng gợi ý nằm dưới xa. Chỉ bật từ bản này trở lên.
+          autoScrollToGame: true,
+          // Tìm theo tên vốn phải đợi 450ms debounce (im lặng, không có
+          // gì hiện ra) trước khi mới bắt đầu tải — cảm giác bị khựng.
+          // Bật cờ này thì nhấn Enter, vừa dán, hoặc rời khỏi ô nhập
+          // (blur) trong khi có chữ sẽ bỏ qua debounce, hiện skeleton
+          // loading NGAY và tải luôn. Gõ liên tục vẫn giữ debounce như
+          // cũ (tránh gọi API dồn dập mỗi phím gõ) — chỉ mấy tín hiệu
+          // "xong rồi" ở trên mới được tăng tốc. Link/Place ID hợp lệ
+          // vốn đã tải ngay lập tức từ trước, không liên quan cờ này.
+          instantSearchTrigger: true,
+          // Ghi chú "chọn từ gợi ý / kết quả gần đúng" dời từ cuối cùng
+          // của khối kết quả lên ngay dưới hàng nút Play/Copy, và đổi
+          // thành 1 thanh note trải rộng hết chiều ngang thay vì chữ
+          // chú thích nhỏ như cũ. Chỉ bật từ bản này trở lên.
+          genNoteV2: true,
+          // Thiết kế tối giản cho .related-card/.discovery-card (khung
+          // "Kết quả khác" + 2 hàng gợi ý cuộn ngang): chỉ còn khung
+          // vuông bo 2px + ảnh (98% khung, canh giữa) — bỏ hẳn tên game
+          // và nút Play chồng lên ảnh. Chỉ bật từ bản này trở lên, các
+          // bản trước vẫn giữ nguyên card có tên + nút Play như cũ.
+          minimalDiscoveryCards: true,
+          // Khung Settings ẩn (Shift+S để mở/đóng) — hiện có đúng 1 tuỳ
+          // chọn: ẩn toàn bộ thanh cuộn trong trang (mặc định BẬT sẵn).
+          // Đánh dấu "BETA" vì mới, chưa chắc giữ nguyên hình thức này.
+          // Chỉ bật từ bản này trở lên — các bản trước không có phím
+          // tắt này và luôn hiện thanh cuộn mặc định của trình duyệt
+          // (xem thêm ghi chú tại rule ẩn scrollbar trong style.css).
+          betaSettingsPanel: true,
+          // Hover 1 ô game trong "Kết quả khác"/2 hàng gợi ý (.is-compact)
+          // sẽ hiện 1 khung kính mờ nổi riêng, phóng to đúng từ vị trí ô
+          // đó lên trên và xuống dưới: ảnh to hơn ở trên, tên + nút Play
+          // to ở dưới. Ô gốc chỉ ẩn đi (chừa lại đúng khoảng trống của
+          // nó) trong lúc hover, không đổi bố cục các ô xung quanh. Chỉ
+          // bật từ bản này trở lên — các bản trước hover vẫn y hệt cũ
+          // (nhấc nhẹ + đổi màu nền, không có khung nổi này).
+          cardHoverPreview: true
+        },
+        // iconUrl: đường dẫn tới file icon verified tùy chỉnh — đặt file
+        // thật vào assets/icons/ với đúng tên bên dưới.
+        verifiedBadge: {
+          iconUrl: 'assets/icons/verified.png',
+          tooltip: 'Nhà phát triển đã được Roblox xác minh'
+        }
+      }
     }
   ];
 
   // Which version a visitor with no "#/..." in the URL lands on.
-  var DEFAULT_SLUG = 'pre-alpha2';
+  var DEFAULT_SLUG = 'pre-alpha2-5';
 
   // ── helpers ──
   var isPlainObject = function (v) {
