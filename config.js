@@ -79,5 +79,21 @@ window.CONFIG = {
         "forceWhite": false
       }
     }
+  },
+  // Pool game "gợi ý" dùng cho 2 khối bên dưới thanh search: "Đang được
+  // chơi nhiều nhất" (sắp theo playing thật, giảm dần) và "Lựa chọn cho
+  // bạn hôm nay" (random từ chính pool này, đổi mỗi ngày). Chỉ cần điền
+  // placeId — worker tự lấy tên/icon/số liệu thật, không cần deploy lại
+  // worker khi bạn thêm/bớt game trong danh sách này. Thêm thoải mái,
+  // pool càng đa dạng thì "lựa chọn cho bạn" càng đỡ lặp.
+  "discoveryPool": {
+    "placeIds": [
+      "2753915549",   // Blox Fruits
+      "142823291",    // Murder Mystery 2
+      "4924922222",   // Brookhaven RP
+      "920587237",    // Adopt Me!
+      "97598239454123", // Grow a Garden 2
+      "107778070777162" // Steal An Egg
+    ]
   }
 };
