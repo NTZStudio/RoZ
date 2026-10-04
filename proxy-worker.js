@@ -37,8 +37,8 @@
 // Endpoints this worker exposes:
 //   GET {workerUrl}/game-info?placeId=90500188348656
 //   → { "name": "...", "description": "...", "creatorName": "...",
-//       "creatorType": "Group", "playing": 1234, "likePercent": 92,
-//       "universeId": ..., "iconUrl": "https://..." }
+//       "creatorType": "Group", "creatorVerified": true, "playing": 1234,
+//       "likePercent": 92, "universeId": ..., "iconUrl": "https://..." }
 //   GET {workerUrl}/search-game?query=adopt+me
 //   → { "placeId": "...", "universeId": ..., "name": "...",
 //       "description": "...", "creatorName": "...", "creatorVerified": true,
@@ -51,6 +51,15 @@
 //   → { "placeId": "...", "linkCode": "...", "universeId": ... }
 //     (resolves a private-server share link into a real placeId+linkCode;
 //     404s if the code isn't a valid "Server" invite)
+//   GET {workerUrl}/games-batch?placeIds=920587237,4924922222,...
+//   → { "games": [ { "placeId": "...", "universeId": ..., "name": "...",
+//       "creatorName": "...", "creatorVerified": true, "playing": 1234,
+//       "visits": 123456789, "likePercent": 92, "iconUrl": "https://..." },
+//       ... ] }
+//     (batch lookup for a small curated placeId list — 3 Roblox API calls
+//     total no matter how many ids are passed, up to 40. Used for the
+//     homepage's "trending now" / "picks for you" rows; edge-cached 20
+//     minutes so repeat visitors across the site don't re-trigger it)
 // ─────────────────────────────────────────────────────────────────
 
 var ALLOWED_ORIGIN = '*'; // e.g. 'https://yourdomain.com'
@@ -97,6 +106,21 @@ function goodResultCacheKey(placeId) {
   return new Request('https://roz-proxy-cache.internal/good/' + placeId);
 }
 
+// The homepage's "trending" / "picks for you" rows call /games-batch with
+// the SAME small curated placeId list (from every visitor's browser), so
+// this is cached briefly at the edge too — otherwise every visitor's
+// once-a-day request still means N visitors × 3 Roblox API calls each,
+// all fetching identical data. 20 minutes keeps player counts reasonably
+// fresh while cutting that down to a handful of real Roblox calls per
+// cache window regardless of visitor count.
+var BATCH_CACHE_TTL_SECONDS = 20 * 60; // 20 minutes
+
+function batchCacheKey(placeIds) {
+  // Sorted so the same set of ids in a different order still hits the
+  // same cache entry.
+  return new Request('https://roz-proxy-cache.internal/batch/' + placeIds.slice().sort().join(','));
+}
+
 async function fetchGameInfo(placeId) {
   // 1. placeId → universeId
   var universeRes = await fetch('https://apis.roblox.com/universes/v1/places/' + placeId + '/universe');
@@ -138,6 +162,7 @@ async function fetchGameInfo(placeId) {
     description: game.description || null,
     creatorName: game.creator ? game.creator.name : null,
     creatorType: game.creator ? game.creator.type : null,
+    creatorVerified: !!(game.creator && game.creator.hasVerifiedBadge),
     playing: (typeof game.playing === 'number') ? game.playing : null,
     visits: (typeof game.visits === 'number') ? game.visits : null,
     iconUrl: icon ? icon.imageUrl : null,
@@ -217,6 +242,128 @@ async function fetchGameBySearchQuery(query) {
   } catch (e) { /* best-effort */ }
 
   return primary;
+}
+
+// Given a small list of placeIds (the curated pool the site's config.js
+// keeps for the homepage's "trending now" / "picks for you" rows),
+// resolves all of them to universeIds and then fetches name/creator/
+// playing/visits, icons, and like% for the whole batch in 3 calls total
+// — regardless of how many placeIds are in the list — instead of 3 calls
+// PER game. The site only calls this once per visitor per day (it caches
+// the result itself), and this worker caches it too (see
+// BATCH_CACHE_TTL_SECONDS below), so in practice Roblox's real APIs see
+// a small fraction of the traffic actual page views would otherwise cost.
+async function fetchGamesBatch(placeIds) {
+  var universeResults = await Promise.all(placeIds.map(async function (placeId) {
+    try {
+      var r = await fetch('https://apis.roblox.com/universes/v1/places/' + placeId + '/universe');
+      if (!r.ok) return { placeId: placeId, ok: false, status: r.status };
+      var j = await r.json();
+      return (j && j.universeId)
+        ? { placeId: placeId, ok: true, universeId: j.universeId }
+        : { placeId: placeId, ok: false, status: r.status, note: 'response had no universeId' };
+    } catch (e) {
+      return { placeId: placeId, ok: false, error: String(e && e.message || e) };
+    }
+  }));
+  var universePairs = universeResults.filter(function (u) { return u.ok; });
+  var debug = { universeLookups: universeResults };
+
+  if (!universePairs.length) return { games: [], debug: debug };
+
+  var universeIds = universePairs.map(function (p) { return p.universeId; });
+  var idsParam = universeIds.join(',');
+  debug.universeIdsQueried = idsParam;
+
+  // The batched games endpoint (?universeIds=a,b,c,...) turns out to get
+  // Roblox's "[Title Unavailable]" sanitized-placeholder treatment far
+  // more readily than a single-universeId call — querying several IDs
+  // at once is a much stronger automation signal to Roblox's side. So
+  // each universeId's /v1/games lookup is fired separately (still in
+  // parallel via Promise.all — same wall-clock cost, not N times
+  // slower), and one sanitized/failed lookup only drops that one game
+  // instead of the entire batch coming back empty.
+  var gamesCallInfo = { perUniverse: [] };
+  var gameByUniverse = {};
+  await Promise.all(universePairs.map(async function (p) {
+    async function attempt() {
+      var r = await fetch('https://games.roblox.com/v1/games?universeIds=' + p.universeId);
+      var entry = { universeId: p.universeId, status: r.status, ok: r.ok };
+      if (r.ok) {
+        var j = await r.json();
+        var g = j && j.data && j.data[0];
+        if (g) {
+          entry.sanitized = ((g.name || '').toUpperCase() === '[TITLE UNAVAILABLE]');
+          if (!entry.sanitized) entry.game = g;
+        } else {
+          entry.note = 'no game data in response';
+        }
+      }
+      return entry;
+    }
+    try {
+      var entry = await attempt();
+      // Same "one immediate retry" tolerance /game-info already relies
+      // on — a sanitized response here has turned out to be as likely
+      // to just be transient noise for a single universeId as it is for
+      // a full batch, so it's worth one more try before giving up on it.
+      if (entry.sanitized) {
+        var retryEntry = await attempt().catch(function () { return entry; });
+        retryEntry.retried = true;
+        entry = retryEntry;
+      }
+      if (entry.game) gameByUniverse[p.universeId] = entry.game;
+      delete entry.game; // keep the debug payload small — only need pass/fail here
+      gamesCallInfo.perUniverse.push(entry);
+    } catch (e) {
+      gamesCallInfo.perUniverse.push({ universeId: p.universeId, error: String(e && e.message || e) });
+    }
+  }));
+  debug.gamesCall = gamesCallInfo;
+  debug.gamesReturned = gamesCallInfo.perUniverse.filter(function (e) { return e.ok; }).length;
+  debug.matchedGames = Object.keys(gameByUniverse).length;
+
+  var iconsCallInfo = {}, votesCallInfo = {};
+  var results = await Promise.all([
+    fetch('https://thumbnails.roblox.com/v1/games/icons?universeIds=' + idsParam + '&size=512x512&format=Png&isCircular=false')
+      .then(function (r) { iconsCallInfo.status = r.status; iconsCallInfo.ok = r.ok; return r.ok ? r.json() : null; })
+      .catch(function (e) { iconsCallInfo.error = String(e && e.message || e); return null; }),
+    fetch('https://games.roblox.com/v1/games/votes?universeIds=' + idsParam)
+      .then(function (r) { votesCallInfo.status = r.status; votesCallInfo.ok = r.ok; return r.ok ? r.json() : null; })
+      .catch(function (e) { votesCallInfo.error = String(e && e.message || e); return null; })
+  ]);
+  var iconsJson = results[0], votesJson = results[1];
+  debug.iconsCall = iconsCallInfo;
+  debug.votesCall = votesCallInfo;
+
+  var iconByUniverse = {};
+  ((iconsJson && iconsJson.data) || []).forEach(function (icon) { iconByUniverse[icon.targetId] = icon.imageUrl; });
+
+  var likeByUniverse = {};
+  ((votesJson && votesJson.data) || []).forEach(function (v) {
+    if (typeof v.upVotes === 'number' && typeof v.downVotes === 'number') {
+      var total = v.upVotes + v.downVotes;
+      if (total > 0) likeByUniverse[v.id != null ? v.id : v.universeId] = Math.round((v.upVotes / total) * 100);
+    }
+  });
+
+  var games = universePairs.map(function (p) {
+    var g = gameByUniverse[p.universeId];
+    if (!g) return null; // this one game failing to resolve just drops it from the batch
+    return {
+      placeId: p.placeId,
+      universeId: p.universeId,
+      name: g.name || null,
+      creatorName: g.creator ? g.creator.name : null,
+      creatorVerified: !!(g.creator && g.creator.hasVerifiedBadge),
+      playing: (typeof g.playing === 'number') ? g.playing : null,
+      visits: (typeof g.visits === 'number') ? g.visits : null,
+      likePercent: (typeof likeByUniverse[p.universeId] === 'number') ? likeByUniverse[p.universeId] : null,
+      iconUrl: iconByUniverse[p.universeId] || null
+    };
+  }).filter(Boolean);
+
+  return { games: games, debug: debug };
 }
 
 // Resolves a share-link code (from roblox.com/share?code=...&type=... or
@@ -304,6 +451,49 @@ async function handleRequest(request, event) {
       return new Response(JSON.stringify(resolved), { status: 200, headers: corsHeaders() });
     } catch (err) {
       return new Response(JSON.stringify({ error: String(err && err.message || err) }), { status: 404, headers: corsHeaders() });
+    }
+  }
+
+  if (url.pathname === '/games-batch') {
+    var placeIdsParam = url.searchParams.get('placeIds') || '';
+    var placeIdList = placeIdsParam.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return /^\d+$/.test(s); });
+    if (!placeIdList.length) {
+      return new Response(JSON.stringify({ error: 'missing or invalid placeIds' }), { status: 400, headers: corsHeaders() });
+    }
+    // Cap it — this is meant for a small curated homepage pool, not a
+    // general-purpose bulk lookup endpoint.
+    placeIdList = placeIdList.slice(0, 40);
+
+    var batchCache = caches.default;
+    var batchKey = batchCacheKey(placeIdList);
+    var cachedBatch = await batchCache.match(batchKey);
+    if (cachedBatch) {
+      return new Response(await cachedBatch.text(), { status: 200, headers: corsHeaders() });
+    }
+
+    try {
+      var batchResult = await fetchGamesBatch(placeIdList);
+      var responseBody = { games: batchResult.games };
+      // Only cache genuinely successful, non-empty results. Caching an
+      // empty batch used to mean a single transient Roblox hiccup got
+      // served back to every visitor for the full 20-minute TTL, even
+      // after Roblox had already recovered — worth a live retry every
+      // time until it actually has something to show instead.
+      if (batchResult.games.length) {
+        var batchResponse = new Response(JSON.stringify(responseBody), {
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=' + BATCH_CACHE_TTL_SECONDS }
+        });
+        var batchPutPromise = batchCache.put(batchKey, batchResponse);
+        if (event) event.waitUntil(batchPutPromise); else await batchPutPromise;
+      } else {
+        // Empty — attach what actually happened at each step so this is
+        // debuggable from the client response instead of a flat "no
+        // games", without needing Worker log access.
+        responseBody.debug = batchResult.debug;
+      }
+      return new Response(JSON.stringify(responseBody), { status: 200, headers: corsHeaders() });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: String(err && err.message || err) }), { status: 502, headers: corsHeaders() });
     }
   }
 
