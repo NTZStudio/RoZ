@@ -45,6 +45,138 @@
     }
   }
 
+  // Beta Settings panel (Shift+S) — Pre-Alpha2.5+ only. Everything in
+  // this block, including the keyboard shortcut itself, only runs when
+  // the flag is on; older versions get none of it (not even a
+  // do-nothing listener) and never gain the `.hide-scrollbars` class,
+  // so their scrollbars stay exactly as they always were.
+  if (cfg.features && cfg.features.betaSettingsPanel) {
+    var betaSettingsEl = document.getElementById('betaSettings');
+    var betaSettingsCloseEl = document.getElementById('betaSettingsClose');
+    var betaHideScrollbarToggleEl = document.getElementById('betaHideScrollbarToggle');
+
+    // Defaults to ON as soon as the flag is active — hiding scrollbars
+    // is the intended default look for these versions; the panel just
+    // lets someone opt back out (e.g. for debugging) without needing to
+    // touch the code.
+    root.classList.add('hide-scrollbars');
+    if (betaHideScrollbarToggleEl) betaHideScrollbarToggleEl.checked = true;
+
+    if (betaHideScrollbarToggleEl) {
+      betaHideScrollbarToggleEl.addEventListener('change', function () {
+        root.classList.toggle('hide-scrollbars', betaHideScrollbarToggleEl.checked);
+      });
+    }
+
+    // Lets someone swap in their own Cloudflare Worker (their own
+    // deployment of proxy-worker.js) without touching config.js —
+    // useful if the default one is down/rate-limited, or they're
+    // running their own fork. Every other place in this file reads
+    // `(window.CONFIG || {}).gameApiProxyBase` fresh at the moment it's
+    // needed rather than caching it once, so mutating it here on `cfg`
+    // (the same object window.CONFIG points to) is all that's needed —
+    // no other code path needs to know this override exists.
+    var PROXY_STORAGE_KEY = 'roz_custom_proxy';
+    var defaultProxyBase = cfg.gameApiProxyBase || '';
+    var betaProxyNameEl = document.getElementById('betaProxyName');
+    var betaProxyUsernameEl = document.getElementById('betaProxyUsername');
+    var betaProxyApplyEl = document.getElementById('betaProxyApply');
+    var betaProxyResetEl = document.getElementById('betaProxyReset');
+    var betaProxyCurrentEl = document.getElementById('betaProxyCurrent');
+
+    var updateProxyStatus = function () {
+      if (!betaProxyCurrentEl) return;
+      var active = cfg.gameApiProxyBase || '';
+      var isCustom = active !== defaultProxyBase;
+      betaProxyCurrentEl.textContent = active ? ('Đang dùng: ' + active) : 'Chưa cấu hình proxy nào.';
+      betaProxyCurrentEl.classList.toggle('is-custom', isCustom);
+    };
+
+    var applyProxyOverride = function (name, username, persist) {
+      name = (name || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      username = (username || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      if (!name || !username) return false;
+      cfg.gameApiProxyBase = 'https://' + name + '.' + username + '.workers.dev';
+      if (persist) {
+        try {
+          localStorage.setItem(PROXY_STORAGE_KEY, JSON.stringify({ name: name, username: username }));
+        } catch (err) { /* localStorage unavailable — override still works for this session */ }
+      }
+      updateProxyStatus();
+      return true;
+    };
+
+    // Restore a previously-saved override on load, if any.
+    try {
+      var savedProxyRaw = localStorage.getItem(PROXY_STORAGE_KEY);
+      if (savedProxyRaw) {
+        var savedProxy = JSON.parse(savedProxyRaw);
+        if (savedProxy && savedProxy.name && savedProxy.username) {
+          if (betaProxyNameEl) betaProxyNameEl.value = savedProxy.name;
+          if (betaProxyUsernameEl) betaProxyUsernameEl.value = savedProxy.username;
+          applyProxyOverride(savedProxy.name, savedProxy.username, false);
+        }
+      }
+    } catch (err) { /* corrupt/unavailable storage — just fall back to the default */ }
+    updateProxyStatus();
+
+    if (betaProxyApplyEl) {
+      betaProxyApplyEl.addEventListener('click', function () {
+        var ok = applyProxyOverride(
+          betaProxyNameEl ? betaProxyNameEl.value : '',
+          betaProxyUsernameEl ? betaProxyUsernameEl.value : '',
+          true
+        );
+        if (!ok && betaProxyCurrentEl) {
+          betaProxyCurrentEl.textContent = 'Cần nhập đủ cả tên worker và username.';
+          betaProxyCurrentEl.classList.remove('is-custom');
+        }
+      });
+    }
+
+    if (betaProxyResetEl) {
+      betaProxyResetEl.addEventListener('click', function () {
+        cfg.gameApiProxyBase = defaultProxyBase;
+        try { localStorage.removeItem(PROXY_STORAGE_KEY); } catch (err) { /* ignore */ }
+        if (betaProxyNameEl) betaProxyNameEl.value = '';
+        if (betaProxyUsernameEl) betaProxyUsernameEl.value = '';
+        updateProxyStatus();
+      });
+    }
+
+    if (betaSettingsEl) {
+      var closeBetaSettings = function () {
+        betaSettingsEl.hidden = true;
+      };
+      var openBetaSettings = function () {
+        betaSettingsEl.hidden = false;
+      };
+
+      if (betaSettingsCloseEl) {
+        betaSettingsCloseEl.addEventListener('click', closeBetaSettings);
+      }
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'S' && e.key !== 's') return;
+        if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+        // Don't hijack a capital S the person is actually typing —
+        // Shift+S is completely ordinary input while a text field has
+        // focus (e.g. typing "Simulator" in the search box).
+        var active = document.activeElement;
+        if (active) {
+          var tag = active.tagName;
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || active.isContentEditable) return;
+        }
+        e.preventDefault();
+        if (betaSettingsEl.hidden) {
+          openBetaSettings();
+        } else {
+          closeBetaSettings();
+        }
+      });
+    }
+  }
+
   if (cfg.brand) {
     var brandMark = document.getElementById('brandMark');
     if (cfg.brand.logoImage) {
@@ -150,11 +282,7 @@
     var ntzDesc = document.getElementById('ntzDesc');
     var ntzNotify = document.getElementById('ntzNotify');
     var stateTimer = null;
-    var openHeightTimer = null;
     var OPEN_BLINK_MS = 400;
-    // Matches the base (opening) height transition duration in CSS —
-    // after this, we hand the notify column back to 'auto' height.
-    var OPEN_HEIGHT_MS = 500;
     // Time for the notify frame/body/divider to fully fade+slide out (their
     // closing-specific CSS transitions have no delay, longest is ~0.24s)
     // before we're allowed to collapse the reserved 46% layout column.
@@ -203,36 +331,12 @@
           if (ntzDesc) {
             ntzDesc.classList.remove('is-blinking');
           }
-          if (ntzNotify) {
-            // height:auto can't be transitioned, and animating
-            // grid-template-rows with fr values isn't reliably supported
-            // across browsers (notably older Safari) — so measure the
-            // real content height and tween that concrete pixel value
-            // instead. scrollHeight still reports the full content size
-            // even while the element itself is clipped to 0.
-            var targetH = ntzNotify.scrollHeight;
-            ntzNotify.style.height = targetH + 'px';
-            clearTimeout(openHeightTimer);
-            openHeightTimer = setTimeout(function () {
-              // Hand back to auto so future reflows (resize, orientation
-              // change, clamp() font changes) keep sizing correctly.
-              ntzNotify.style.height = 'auto';
-              openHeightTimer = null;
-            }, OPEN_HEIGHT_MS);
-          }
           stateTimer = null;
         }, OPEN_BLINK_MS);
       } else {
         ntzPanel.classList.add('is-closing');
         if (ntzDesc) {
           ntzDesc.classList.add('is-blinking');
-        }
-        if (ntzNotify) {
-          clearTimeout(openHeightTimer);
-          openHeightTimer = null;
-          // Pin a concrete starting pixel height (it may currently be
-          // 'auto') so there's something to transition down from.
-          ntzNotify.style.height = ntzNotify.scrollHeight + 'px';
         }
         // Text stays hidden (is-blinking) the whole time below, so these
         // layout snaps (flex-basis / text-align, which aren't transitioned)
@@ -242,9 +346,6 @@
           // to reclaim their layout space.
           ntzPanel.classList.remove('is-notify');
           ntzPanel.classList.remove('is-desc-narrow');
-          if (ntzNotify) {
-            ntzNotify.style.height = '0px';
-          }
           stateTimer = setTimeout(function () {
             // Panel width has finished shrinking back — now reveal the
             // centered text.
@@ -265,6 +366,52 @@
   var resultEl    = document.getElementById('genResult');
   var outputEl    = document.getElementById('genOutput');
   var noteEl      = document.getElementById('genNote');
+  var noteTextEl  = document.getElementById('genNoteText');
+  var noteBlinkTimer = null;
+  var pendingNoteText = '';
+
+  // Splits the note into one <span> per character, each with its own
+  // staggered animation-delay (see .gen-note-char in style.css) — reads
+  // as the whole line flying/fading into place in reading order rather
+  // than just appearing. Capped at 40 characters of stagger so a long
+  // note doesn't take forever to finish settling; anything past that
+  // just shares the same (already fast) delay as character 40. Once
+  // every character has settled, the TEXT (not the icon next to it)
+  // starts a slow, continuous fade-out/fade-in pulse (.is-attention,
+  // see style.css) to keep drawing the eye — it doesn't stop on its own.
+  //
+  // All of that is Pre-Alpha2.5+ (genNoteV2) only — older versions just
+  // get the plain string dropped in with textContent, no animation, no
+  // pulse. (genNoteV2Enabled itself isn't assigned until a bit further
+  // down this file, but this function only ever RUNS later, in response
+  // to something the person does — by then it's already set.)
+  var setNoteText = function (text) {
+    if (!noteTextEl) return;
+    noteTextEl.innerHTML = '';
+    if (noteBlinkTimer) { clearTimeout(noteBlinkTimer); noteBlinkTimer = null; }
+    noteTextEl.classList.remove('is-attention');
+    if (!text) return;
+    if (!genNoteV2Enabled) {
+      noteTextEl.textContent = text;
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    var chars = String(text).split('');
+    chars.forEach(function (ch, i) {
+      var span = document.createElement('span');
+      span.className = 'gen-note-char';
+      span.textContent = ch === ' ' ? '\u00A0' : ch;
+      span.style.animationDelay = (Math.min(i, 40) * 14) + 'ms';
+      frag.appendChild(span);
+    });
+    noteTextEl.appendChild(frag);
+    var CHAR_STEP_MS = 14;
+    var CHAR_ANIM_DURATION_MS = 350;
+    var lastCharDelay = Math.min(chars.length - 1, 40) * CHAR_STEP_MS;
+    noteBlinkTimer = setTimeout(function () {
+      noteTextEl.classList.add('is-attention');
+    }, lastCharDelay + CHAR_ANIM_DURATION_MS);
+  };
   var copyBtn     = document.getElementById('copyBtn');
   var joinBtn     = document.getElementById('joinBtn');
   var thumbWrapEl = document.getElementById('gameThumbWrap');
@@ -273,6 +420,9 @@
   var nameEl      = document.getElementById('gameName');
   var creatorEl   = document.getElementById('gameCreator');
   var verifiedEl  = document.getElementById('gameVerifiedBadge');
+  var verifiedV2El = document.getElementById('gameVerifiedBadgeV2');
+  var verifiedV2IconEl = document.getElementById('gameVerifiedIconV2');
+  var floatTipEl = document.getElementById('verifiedFloatTip');
   var playingStatEl = document.getElementById('gamePlayingStat');
   var playingTextEl = document.getElementById('gamePlayingText');
   var likeStatEl  = document.getElementById('gameLikeStat');
@@ -284,6 +434,9 @@
   var relatedGamesGridEl = document.getElementById('relatedGamesGrid');
   var relatedGamesLabelEl = document.getElementById('relatedGamesLabel');
   var betaBtn     = document.getElementById('betaBtn');
+  var discoveryRowsEl = document.getElementById('discoveryRows');
+  var discoveryTrendingRowEl = document.getElementById('discoveryTrendingRow');
+  var discoveryPicksRowEl = document.getElementById('discoveryPicksRow');
 
   // Pre-Alpha1.3+: reworked main game-card layout (bigger icon on the
   // left spanning the card's full height, name/creator/stats on the
@@ -293,6 +446,183 @@
   var isCardV2 = !!(cfg.features && cfg.features.gameCardV2);
   if (isCardV2 && gameCardEl) gameCardEl.classList.add('is-v2');
   if (betaBtn) betaBtn.hidden = !isCardV2;
+
+  // Pre-Alpha2.5+: while the card is loading, its pieces render as empty
+  // shimmering frames (skeleton) instead of literal "Đang tải..." text —
+  // purely additive via the .is-skel class below, so a version without
+  // this flag renders exactly as it always did.
+  var skelEnabled = !!(cfg.features && cfg.features.skeletonLoading);
+  if (skelEnabled && gameCardEl) gameCardEl.classList.add('is-skel');
+
+  // Pre-Alpha2.5+: sharp 3px corners on the thumbnail/buttons + the
+  // redesigned Play button (gradient, hover glow + shine sweep) —
+  // scoped behind .is-polished so versions before this flag existed
+  // keep the original rounded corners and plain accent-color button.
+  var polishedEnabled = !!(cfg.features && cfg.features.polishedUI);
+  if (polishedEnabled && gameCardEl) gameCardEl.classList.add('is-polished');
+
+  // Pre-Alpha2.5+: the "you picked this from search / this is a fuzzy
+  // match" note moves from way down at the bottom of the whole result
+  // block to right under the Play/Copy row, and reads as a proper full-
+  // width note bar there instead of a plain caption line. Done by
+  // relocating the actual element (not duplicating markup) so there's
+  // exactly one #genNote either way — versions without this flag never
+  // move it, so it stays in its original spot at the end of #genResult.
+  var genNoteV2Enabled = !!(cfg.features && cfg.features.genNoteV2);
+  if (genNoteV2Enabled && noteEl && gameCardEl) {
+    var actionsRowEl = gameCardEl.querySelector('.game-card-actions');
+    // Appended as the actions row's own last child (not just a sibling
+    // after it) — see the CSS comment on .game-card-actions > .gen-note
+    // for why that matters in the .is-v2 grid layout.
+    if (actionsRowEl) actionsRowEl.appendChild(noteEl);
+  }
+
+  // Pre-Alpha2.5+: cursor-tracking border/glow on the Play button — the
+  // border reads brightest at whatever point the pointer is currently
+  // over and fades out toward the opposite side, and a soft glow spills
+  // out past the button's own edges.
+  //
+  // This has to live in its own element appended to <body> rather than
+  // as part of the button. `.game-card.is-v2` uses
+  // `container-type: inline-size` for its cqi-based proportional
+  // scaling, and per spec any element with that set gets an implicit,
+  // non-overridable clip on its own box (browsers ignore an authored
+  // `overflow: visible` there — it exists to guarantee the containment
+  // the container-query system needs). That clip catches every
+  // descendant no matter how deep, so anything painted past
+  // `.game-card`'s own edges — like this glow — could never actually
+  // show up while living inside it. #playRingPortal sits outside that
+  // whole subtree instead, and is just kept glued to the button's
+  // current on-screen position/size.
+  if (polishedEnabled && joinBtn) {
+    var playRingPortal = document.createElement('div');
+    playRingPortal.id = 'playRingPortal';
+    playRingPortal.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(playRingPortal);
+
+    var playRingResetTimer = null;
+    var syncPlayRingPortal = function () {
+      var rect = joinBtn.getBoundingClientRect();
+      playRingPortal.style.left = rect.left + 'px';
+      playRingPortal.style.top = rect.top + 'px';
+      playRingPortal.style.width = rect.width + 'px';
+      playRingPortal.style.height = rect.height + 'px';
+    };
+    // Coordinates left over from the last hover would otherwise sit in
+    // this position:fixed element forever (only opacity toggles, not
+    // display) — some browsers still factor a fixed element's far
+    // off-screen position into the document's scrollable area, which
+    // is exactly how a stale coordinate from an earlier (e.g. wider)
+    // layout can leave the whole page horizontally scrollable on
+    // mobile with nothing actually there to see. Zeroing it out once
+    // it's fully faded (not instantly, so the fade itself still looks
+    // like a fade) keeps that from ever lingering.
+    var resetPlayRingPortal = function () {
+      playRingPortal.style.left = '0px';
+      playRingPortal.style.top = '0px';
+      playRingPortal.style.width = '0px';
+      playRingPortal.style.height = '0px';
+    };
+    var hidePlayRingPortal = function () {
+      playRingPortal.classList.remove('is-visible');
+      clearTimeout(playRingResetTimer);
+      playRingResetTimer = setTimeout(resetPlayRingPortal, 350); // matches its opacity transition duration
+    };
+
+    joinBtn.addEventListener('pointerenter', function () {
+      clearTimeout(playRingResetTimer);
+      syncPlayRingPortal();
+      playRingPortal.classList.add('is-visible');
+    });
+
+    joinBtn.addEventListener('pointermove', function (e) {
+      var rect = joinBtn.getBoundingClientRect();
+      playRingPortal.style.setProperty('--play-mx', (e.clientX - rect.left) + 'px');
+      playRingPortal.style.setProperty('--play-my', (e.clientY - rect.top) + 'px');
+      // Cheap enough to just re-sync every move too, so a scroll or
+      // layout shift mid-hover never leaves it stranded.
+      syncPlayRingPortal();
+    });
+
+    joinBtn.addEventListener('pointerleave', hidePlayRingPortal);
+
+    window.addEventListener('scroll', function () {
+      if (playRingPortal.classList.contains('is-visible')) syncPlayRingPortal();
+    }, { passive: true });
+
+    // A resize (rotating a phone, or resizing the window/devtools
+    // viewport mid-session) can't be trusted to arrive with a fresh
+    // hover first — hide and reset immediately rather than waiting on
+    // the next pointer event that may never come at the new size.
+    window.addEventListener('resize', function () {
+      clearTimeout(playRingResetTimer);
+      playRingPortal.classList.remove('is-visible');
+      resetPlayRingPortal();
+    });
+  }
+
+  // Pre-Alpha2.5+: a small label revealing each button's function,
+  // appearing right underneath it as it lifts on hover (Play → "Join
+  // <game name>", Copy → "Copy Game", the reserved beta slot →
+  // "Save Game" — text comes from each button's own `data-tooltip`
+  // attribute; joinBtn's gets kept in sync with the loaded game's name
+  // over in renderGameCard()).
+  //
+  // Same #playRingPortal situation as above: a tooltip positioned right
+  // under one of these buttons would sit past `.game-card`'s bottom
+  // edge, and `.game-card.is-v2`'s `container-type` clips that no
+  // matter what — so this one shared portal lives outside the card too,
+  // reused for whichever of the three buttons is currently hovered.
+  if (polishedEnabled) {
+    var btnTooltipPortal = document.createElement('div');
+    btnTooltipPortal.id = 'btnTooltipPortal';
+    btnTooltipPortal.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(btnTooltipPortal);
+
+    var btnTooltipResetTimer = null;
+    var syncBtnTooltipPortal = function (btn) {
+      var rect = btn.getBoundingClientRect();
+      btnTooltipPortal.style.left = (rect.left + rect.width / 2) + 'px';
+      btnTooltipPortal.style.top = rect.bottom + 'px';
+    };
+    // Same reasoning as #playRingPortal above: zero out the stale
+    // coordinate once the fade-out has actually finished, so nothing
+    // lingers to affect the page's scrollable area after a viewport
+    // change.
+    var resetBtnTooltipPortal = function () {
+      btnTooltipPortal.style.left = '0px';
+      btnTooltipPortal.style.top = '0px';
+    };
+    var hideBtnTooltipPortal = function () {
+      btnTooltipPortal.classList.remove('is-visible');
+      clearTimeout(btnTooltipResetTimer);
+      btnTooltipResetTimer = setTimeout(resetBtnTooltipPortal, 250); // matches its opacity transition duration
+    };
+
+    [joinBtn, copyBtn, betaBtn].forEach(function (btn) {
+      if (!btn) return;
+      btn.addEventListener('pointerenter', function () {
+        var text = btn.getAttribute('data-tooltip');
+        if (!text) return;
+        clearTimeout(btnTooltipResetTimer);
+        btnTooltipPortal.textContent = text;
+        syncBtnTooltipPortal(btn);
+        btnTooltipPortal.classList.add('is-visible');
+      });
+      btn.addEventListener('pointermove', function () {
+        if (btnTooltipPortal.classList.contains('is-visible')) syncBtnTooltipPortal(btn);
+      });
+      btn.addEventListener('pointerleave', hideBtnTooltipPortal);
+    });
+
+    // Same rationale as the resize handler above #playRingPortal — a
+    // viewport change might not be followed by a fresh hover at all.
+    window.addEventListener('resize', function () {
+      clearTimeout(btnTooltipResetTimer);
+      btnTooltipPortal.classList.remove('is-visible');
+      resetBtnTooltipPortal();
+    });
+  }
 
   if (linkInput && resultEl && outputEl && copyBtn && joinBtn) {
 
@@ -514,6 +844,7 @@
           description: restricted ? null : (data.description || null),
           creatorName: restricted ? null : creatorName,
           creatorType: data.creatorType || null,
+          creatorVerified: !!data.creatorVerified,
           playing: (typeof data.playing === 'number') ? data.playing : null,
           visits: (typeof data.visits === 'number') ? data.visits : null,
           iconUrl: data.iconUrl || null,
@@ -971,6 +1302,85 @@
       return n.toLocaleString('vi-VN');
     };
 
+    // Which verified badge style to show is decided per-version: the
+    // custom icon + hover tooltip only exists from Pre-Alpha 2.5 onward
+    // (via the verifiedIconV2 feature flag + verifiedBadge config) —
+    // earlier versions keep the original scalloped-star SVG untouched.
+    var setVerifiedBadge = function (shown) {
+      var cfg = window.CONFIG || {};
+      var vb = cfg.verifiedBadge || {};
+      var useV2 = !!(cfg.features && cfg.features.verifiedIconV2 && vb.iconUrl);
+      if (useV2) {
+        if (verifiedEl) verifiedEl.hidden = true;
+        if (verifiedV2El) {
+          verifiedV2El.hidden = !shown;
+          if (shown) {
+            if (verifiedV2IconEl) {
+              verifiedV2IconEl.onerror = function () {
+                // Custom icon file missing/failed to load — fall back to
+                // the original scalloped-star icon instead of leaving a
+                // broken-image glyph on screen.
+                verifiedV2IconEl.onerror = null;
+                if (verifiedV2El) verifiedV2El.hidden = true;
+                if (verifiedEl) verifiedEl.hidden = false;
+              };
+              verifiedV2IconEl.src = vb.iconUrl;
+            }
+            verifiedV2El.dataset.tip = vb.tooltip || 'Đã xác minh';
+          }
+        }
+      } else {
+        if (verifiedV2El) verifiedV2El.hidden = true;
+        if (verifiedEl) verifiedEl.hidden = !shown;
+      }
+    };
+
+    // The tooltip itself lives once, globally, appended straight to
+    // <body> (see .float-tip in style.css) — deliberately outside every
+    // card/panel so no ancestor's overflow can ever clip it, and it can
+    // float above anything. It follows the cursor while hovering the
+    // badge, and its font-size is copied live from whatever creator-name
+    // text sits next to the badge that triggered it, since that size
+    // differs by card mode (fixed vs clamp()) and this element sits
+    // outside that container-query context entirely.
+    if (floatTipEl && verifiedV2El) {
+      var floatTipOffsetX = 14;
+      var floatTipOffsetY = 14;
+      var moveFloatTip = function (e) {
+        floatTipEl.style.transform = 'translate(' + (e.clientX + floatTipOffsetX) + 'px, ' + (e.clientY + floatTipOffsetY) + 'px)';
+      };
+      verifiedV2El.addEventListener('mouseenter', function (e) {
+        var text = verifiedV2El.dataset.tip;
+        if (!text) return;
+        floatTipEl.textContent = text;
+        if (creatorEl) {
+          floatTipEl.style.fontSize = window.getComputedStyle(creatorEl).fontSize;
+        }
+        floatTipEl.classList.add('is-visible');
+        moveFloatTip(e);
+      });
+      verifiedV2El.addEventListener('mousemove', moveFloatTip);
+      verifiedV2El.addEventListener('mouseleave', function () {
+        floatTipEl.classList.remove('is-visible');
+      });
+      // Keyboard focus has no cursor position to anchor to — fall back to
+      // just above the badge itself.
+      verifiedV2El.addEventListener('focus', function () {
+        var text = verifiedV2El.dataset.tip;
+        if (!text) return;
+        floatTipEl.textContent = text;
+        if (creatorEl) {
+          floatTipEl.style.fontSize = window.getComputedStyle(creatorEl).fontSize;
+        }
+        var rect = verifiedV2El.getBoundingClientRect();
+        floatTipEl.style.transform = 'translate(' + (rect.left) + 'px, ' + (rect.bottom + 8) + 'px)';
+        floatTipEl.classList.add('is-visible');
+      });
+      verifiedV2El.addEventListener('blur', function () {
+        floatTipEl.classList.remove('is-visible');
+      });
+    }
+
     // "100.0K", "42.3M", "1.2B" — used by the v2 card, where every stat
     // pill is just an icon + a bare compact number (no unit words), so
     // large visit/player counts stay short instead of wrapping the pill.
@@ -982,8 +1392,24 @@
       return String(n);
     };
 
+    // Which hover-glow color the visits pill gets: bigger numbers read
+    // as a bigger deal, so the tint escalates from plain/neutral up to
+    // a gold "legendary" glow rather than using one fixed color for
+    // every game regardless of scale.
+    var getVisitsTier = function (n) {
+      if (n >= 1e10) return 'legend'; // 10B+
+      if (n >= 1e8) return 'high';    // 100M–9.9B
+      if (n >= 1e6) return 'mid';     // 1M–99M
+      return 'low';
+    };
+
     var renderGameCard = function (info) {
       if (!thumbEl || !nameEl || !creatorEl) return;
+      // Loading phase is over the moment we have anything to actually
+      // render — the skeleton frames (if this version uses them) settle
+      // into the real content from here on.
+      if (gameCardEl) gameCardEl.classList.remove('is-card-loading');
+      setNoteText(pendingNoteText);
       // No usable real name (either the fetch failed outright, or Roblox
       // sent the sanitized restricted-content placeholder) — drop the
       // name/creator/stats block entirely and show a bigger icon plus just
@@ -999,7 +1425,7 @@
       }
 
       if (!info || (!info.name && !info.iconUrl && !info.restricted)) {
-        if (verifiedEl) verifiedEl.hidden = true;
+        setVerifiedBadge(false);
         if (playingStatEl) playingStatEl.hidden = true;
         if (likeStatEl) likeStatEl.hidden = true;
         if (visitsStatEl) visitsStatEl.hidden = true;
@@ -1012,6 +1438,7 @@
           thumbWrapEl.classList.remove('is-loading');
           thumbWrapEl.classList.add('is-fallback');
         }
+        if (joinBtn) joinBtn.setAttribute('data-tooltip', 'Join Game');
         return;
       }
       nameEl.textContent = info.restricted
@@ -1020,7 +1447,8 @@
       creatorEl.textContent = info.restricted
         ? 'Roblox ẩn tên/tác giả với truy cập chưa đăng nhập'
         : (info.creatorName || '\u00A0');
-      if (verifiedEl) verifiedEl.hidden = !info.creatorVerified;
+      setVerifiedBadge(!!info.creatorVerified);
+      if (joinBtn) joinBtn.setAttribute('data-tooltip', 'Join ' + (info.restricted ? 'Game' : (info.name || 'Game')));
       if (playingStatEl && playingTextEl) {
         if (typeof info.playing === 'number') {
           playingTextEl.textContent = isCardV2
@@ -1045,6 +1473,7 @@
         // data happens to be available.
         if (isCardV2 && typeof info.visits === 'number') {
           visitsTextEl.textContent = formatCompactCount(info.visits);
+          visitsStatEl.dataset.tier = getVisitsTier(info.visits);
           visitsStatEl.hidden = false;
         } else {
           visitsStatEl.hidden = true;
@@ -1076,19 +1505,30 @@
 
     var showCardLoading = function () {
       if (!nameEl || !creatorEl) return;
+      if (noteBlinkTimer) { clearTimeout(noteBlinkTimer); noteBlinkTimer = null; }
+      if (noteTextEl) noteTextEl.classList.remove('is-attention');
       if (gameCardEl) {
         gameCardEl.classList.remove('is-minimal');
         gameCardEl.classList.remove('is-unresolved');
+        // Re-adding the class (even if already present) restarts the
+        // shimmer/stagger animations below each time a new link loads.
+        gameCardEl.classList.remove('is-card-loading');
+        void gameCardEl.offsetWidth;
+        gameCardEl.classList.add('is-card-loading');
       }
       nameEl.textContent = 'Đang tải thông tin game…';
       creatorEl.textContent = '\u00A0';
-      if (verifiedEl) verifiedEl.hidden = true;
-      if (playingStatEl) playingStatEl.hidden = true;
-      if (likeStatEl) likeStatEl.hidden = true;
+      setVerifiedBadge(false);
+      // In skeleton mode the stat pills and description stay visible as
+      // empty shimmering frames instead of disappearing outright — they
+      // get hidden again afterwards if the real data turns out not to
+      // have them (see renderGameCard).
+      if (playingStatEl) playingStatEl.hidden = !skelEnabled;
+      if (likeStatEl) likeStatEl.hidden = !skelEnabled;
       if (visitsStatEl) visitsStatEl.hidden = true;
       if (descriptionEl) {
         descriptionEl.textContent = '';
-        descriptionEl.hidden = true;
+        descriptionEl.hidden = !skelEnabled;
       }
       if (thumbEl) {
         thumbEl.onerror = null;
@@ -1110,6 +1550,8 @@
     // "here's what we know so far" state in the meantime.
     var renderUnresolvedShareCard = function (linkType) {
       if (!nameEl || !creatorEl) return;
+      if (gameCardEl) gameCardEl.classList.remove('is-card-loading');
+      setNoteText(pendingNoteText);
       var isServer = linkType === 'Server';
       if (gameCardEl) {
         gameCardEl.classList.remove('is-minimal');
@@ -1119,7 +1561,7 @@
       creatorEl.textContent = isServer
         ? 'Chưa xem trước được server này — nhấn Chơi ngay để Roblox tự mở đúng server.'
         : 'Chưa xem trước được game này — nhấn Chơi ngay để Roblox tự nhận diện và mở.';
-      if (verifiedEl) verifiedEl.hidden = true;
+      setVerifiedBadge(false);
       if (playingStatEl) playingStatEl.hidden = true;
       if (likeStatEl) likeStatEl.hidden = true;
       if (descriptionEl) {
@@ -1142,7 +1584,7 @@
       errorEl.classList.toggle('is-visible', !!msg);
       resultEl.classList.remove('is-visible');
       if (noteEl) {
-        noteEl.textContent = '';
+        if (noteTextEl) setNoteText('');
         noteEl.classList.remove('is-visible');
       }
       if (relatedGamesEl) relatedGamesEl.hidden = true;
@@ -1150,8 +1592,43 @@
 
     // Plays a quick fade + slide-in on the main card — called right
     // before its content is replaced so each swap (paste a link, pick a
-    // search result, promote a related card) visibly "refreshes" instead
-    // of silently snapping to the new content.
+    // search result, promote a related card, tap a discovery card)
+    // visibly "refreshes" instead of silently snapping to the new
+    // content.
+    var NAV_TO_PAPER_GAP = 14; // small breathing room, not flush against the nav
+    var scrollToGameCard = function () {
+      if (!gameCardEl || !(cfg.features && cfg.features.autoScrollToGame)) return;
+      // Anchor on the whole .paper section's top edge, not the game card
+      // itself — the card sits well inside .paper (below the input row
+      // and page-dock), so anchoring on the card alone left that stuff
+      // sitting above the fold, unused, instead of tucking the nav right
+      // up against the top of the page and showing everything below it.
+      var paperEl = gameCardEl.closest('.paper') || gameCardEl;
+      // Match the topbar's actual current bottom edge (it changes size —
+      // and in its "floating pill" scrolled state, position — between
+      // states) so .paper's top edge lands a small, fixed gap below it:
+      // not hidden behind it (fixed + higher z-index) and not a big
+      // empty gap either. .bottom (not just .height) accounts for the
+      // floating state's own top offset too. Fixed elements don't move
+      // on scroll, so this reading stays valid through the scroll we're
+      // about to do.
+      var topbarEl = document.querySelector('.topbar');
+      var HEADER_CLEARANCE = (topbarEl ? topbarEl.getBoundingClientRect().bottom : 90) + NAV_TO_PAPER_GAP;
+      // How close to HEADER_CLEARANCE counts as "already there, don't
+      // bother re-scrolling" — a small FIXED tolerance, deliberately not
+      // tied to HEADER_CLEARANCE itself. Comparing against
+      // HEADER_CLEARANCE directly meant that shrinking it (to scroll
+      // higher) also widened the "good enough, skip it" range, so later
+      // clicks kept getting silently skipped and any small drift between
+      // games (different card/page heights) never got corrected —
+      // looking like it crept down a little more each time.
+      var SNAP_TOLERANCE = 16;
+      var rect = paperEl.getBoundingClientRect();
+      if (Math.abs(rect.top - HEADER_CLEARANCE) <= SNAP_TOLERANCE && rect.top <= window.innerHeight * 0.4) return;
+      var targetY = window.scrollY + rect.top - HEADER_CLEARANCE;
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+    };
+
     var animateCardSwap = function () {
       if (!gameCardEl) return;
       gameCardEl.classList.remove('is-swapping');
@@ -1164,21 +1641,46 @@
       });
     };
 
+    // Ensures showCardLoading()'s shimmer is visible for at least `ms`
+    // even when the data's already sitting in cache and would otherwise
+    // resolve on the same tick — an instant swap with zero transition
+    // reads as an abrupt, empty "pop" rather than something loading in.
+    // Doesn't add anything on top of a real (slower) fetch: total wait
+    // is whichever of the two takes longer, never fetch time + delay.
+    var minDelay = function (ms) {
+      return new Promise(function (resolve) { setTimeout(resolve, ms); });
+    };
+
     var showResult = function (link, note, placeId, keepRelated) {
       outputEl.value = link;
       resultEl.classList.add('is-visible');
       errorEl.classList.remove('is-visible');
       copyBtn.classList.remove('is-copied');
+      pendingNoteText = note || '';
       if (noteEl) {
-        noteEl.textContent = note || '';
+        // Only reserve the box's visibility here — the character
+        // fly-in animation itself is deferred to renderGameCard /
+        // renderUnresolvedShareCard (right when loading actually
+        // finishes and .is-card-loading's shimmer stops forcing it
+        // visible). Populating it now would play the whole animation
+        // out while it's still hidden behind the loading skeleton,
+        // which is exactly why it used to look instant/invisible.
         noteEl.classList.toggle('is-visible', !!note);
+        if (!placeId) setNoteText(pendingNoteText);
       }
       if (!keepRelated && relatedGamesEl) relatedGamesEl.hidden = true;
 
       if (placeId) {
         showCardLoading();
+        // Scroll right away, the instant loading starts — not after the
+        // fetch resolves — so the card (now showing its shimmer
+        // skeleton) is already in view for however long the request
+        // takes, instead of the page appearing to do nothing until data
+        // arrives and then suddenly jumping.
+        scrollToGameCard();
         var requestId = ++showResult._reqId;
-        fetchGameCore(placeId).then(function (info) {
+        Promise.all([fetchGameCore(placeId), minDelay(400)]).then(function (results) {
+          var info = results[0];
           if (requestId !== showResult._reqId) return; // input changed since — drop stale response
           animateCardSwap();
           renderGameCard(info);
@@ -1217,11 +1719,154 @@
         });
       } else {
         // Share links don't carry a placeId we can look up directly.
+        scrollToGameCard();
         animateCardSwap();
         renderGameCard(null);
       }
     };
     showResult._reqId = 0;
+
+    // Builds the same visual card used in "related games" (icon + play
+    // button + name) but for the horizontal-scrolling discovery rows —
+    // clicking one just selects it the same way a search result does.
+    var renderDiscoveryRow = function (container, list) {
+      if (!container) return;
+      container.innerHTML = '';
+      (list || []).forEach(function (item) {
+        if (!item || !item.placeId) return;
+
+        var card = document.createElement('div');
+        card.className = 'related-card discovery-card' + (cfg.features && cfg.features.minimalDiscoveryCards ? ' is-compact' : '');
+        card.dataset.placeId = item.placeId;
+
+        var thumb = document.createElement('div');
+        thumb.className = 'related-card-thumb';
+
+        var img = document.createElement('img');
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = function () {
+          // Dead/blocked icon URL — hide the broken-image glyph rather
+          // than let the browser draw its default icon in its place.
+          img.onerror = null;
+          img.style.visibility = 'hidden';
+        };
+        if (item.iconUrl) img.src = item.iconUrl;
+        thumb.appendChild(img);
+
+        var playBtn = document.createElement('button');
+        playBtn.type = 'button';
+        playBtn.className = 'related-play-btn';
+        playBtn.setAttribute('aria-label', 'Chơi ' + (item.name || 'game này'));
+        playBtn.innerHTML = PLAY_ICON_SVG;
+        playBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          window.location.href = buildDeepLink({ type: 'web', placeId: item.placeId });
+        });
+        thumb.appendChild(playBtn);
+
+        var name = document.createElement('div');
+        name.className = 'related-card-name';
+        name.textContent = item.name || 'Chưa rõ tên';
+
+        card.appendChild(thumb);
+        card.appendChild(name);
+
+        card.addEventListener('click', function () {
+          currentMainItem = item;
+          currentRelatedList = [];
+          if (relatedGamesLabelEl) relatedGamesLabelEl.textContent = 'Kết quả khác';
+          selectSearchResult(item, genNoteV2Enabled
+            ? 'Kết quả được chọn từ danh sách gợi ý bên dưới ô tìm kiếm.'
+            : 'Được chọn từ mục gợi ý bên dưới thanh tìm kiếm.');
+        });
+
+        container.appendChild(card);
+      });
+    };
+
+    // "Trending now" / "picks for you" rows, fed by the curated pool in
+    // config.js's discoveryPool.placeIds via the worker's /games-batch
+    // endpoint (needs cfg.gameApiProxyBase — there's no roproxy/allorigins
+    // fallback for a multi-id batch call, so this feature just quietly
+    // stays hidden without a worker configured). Cached in localStorage
+    // per calendar day so it only actually fetches once per visitor per
+    // day — reopening or refreshing the page the same day reuses the
+    // cached list instantly instead of hitting the proxy again.
+    var DISCOVERY_CACHE_KEY = 'roz.discoveryRows.v1';
+
+    var todayDateStr = function () {
+      var d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    };
+
+    var showDiscoveryRows = function (trending, picks) {
+      renderDiscoveryRow(discoveryTrendingRowEl, trending);
+      renderDiscoveryRow(discoveryPicksRowEl, picks);
+      if (discoveryRowsEl) {
+        discoveryRowsEl.dataset.ready = '1';
+        // Don't pop the rows open mid-search — only show them now if the
+        // search bar happens to still be empty.
+        if (!linkInput.value.trim()) discoveryRowsEl.hidden = false;
+      }
+    };
+
+    var loadDiscoveryRows = function () {
+      if (!discoveryRowsEl || !(cfg.features && cfg.features.discoveryRows)) return;
+      var pool = (cfg.discoveryPool && cfg.discoveryPool.placeIds) || [];
+      if (!pool.length) return;
+
+      var today = todayDateStr();
+      try {
+        var cachedRaw = window.localStorage.getItem(DISCOVERY_CACHE_KEY);
+        if (cachedRaw) {
+          var cached = JSON.parse(cachedRaw);
+          if (cached && cached.date === today && cached.trending && cached.picks) {
+            showDiscoveryRows(cached.trending, cached.picks);
+            return;
+          }
+        }
+      } catch (e) { /* corrupt/unavailable localStorage — just refetch below */ }
+
+      if (!cfg.gameApiProxyBase) return; // no worker configured — nothing to fetch from
+
+      var base = cfg.gameApiProxyBase.replace(/\/$/, '');
+      fetchWithTimeout(base + '/games-batch?placeIds=' + pool.join(','), 12000)
+        .then(function (r) { if (!r.ok) throw new Error('games-batch http ' + r.status); return r.json(); })
+        .then(function (data) {
+          var games = (data && data.games) || [];
+          if (!games.length) {
+            // The worker attaches `debug` (per-placeId universe lookup
+            // results + the games/icons/votes call statuses) specifically
+            // for this case — surface it instead of throwing it away, or
+            // there's no way to tell WHY it came back empty without
+            // separately hitting the worker URL by hand.
+            var err = new Error('games-batch returned no games');
+            err.debug = data && data.debug;
+            throw err;
+          }
+
+          var trending = games.slice().sort(function (a, b) {
+            return (typeof b.playing === 'number' ? b.playing : -1) - (typeof a.playing === 'number' ? a.playing : -1);
+          }).slice(0, 8);
+
+          // A fresh shuffle of the WHOLE pool, not just whatever's left
+          // after trending — a game can show up in both rows, same as
+          // "most played" and "picks for you" overlapping on Roblox
+          // itself. Re-shuffled once per day (see the cache above), not
+          // once per page view.
+          var picks = shuffleArray(games).slice(0, 8);
+
+          try {
+            window.localStorage.setItem(DISCOVERY_CACHE_KEY, JSON.stringify({ date: today, trending: trending, picks: picks }));
+          } catch (e) { /* storage full/unavailable — still show it this once */ }
+
+          showDiscoveryRows(trending, picks);
+        })
+        .catch(function (err) {
+          console.warn('[RoZ API] loadDiscoveryRows failed:', err, err && err.debug ? err.debug : '');
+        });
+    };
 
     var PLAY_ICON_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 
@@ -1229,16 +1874,19 @@
     // related cards below it) into the main card — the exact same path
     // a pasted link would take, just seeded with data we already have.
     //
-    // Important: the shallow search/related payload (item.name,
-    // item.iconUrl, ...) often does NOT carry a reliable creatorName —
-    // Roblox's search API doesn't consistently return it — so instead of
-    // trusting that payload as final info (which was rendering a blank
-    // creator every time), we do one real fetchGameDetails call using the
-    // universeId we already have (skipping the placeId→universeId lookup,
-    // since that's the only part we don't already know).
+    // Roblox's search API doesn't ALWAYS return a reliable creatorName —
+    // when it's missing, trusting the shallow search/related payload as
+    // final info renders a blank creator. So: only when creatorName is
+    // actually missing do we pay for one real fetchGameDetails call
+    // (using the universeId we already have, skipping the
+    // placeId→universeId lookup) to fill it in. When the search payload
+    // already has a creatorName (the common case), it's used as-is —
+    // no second network round-trip, no visible "loads twice".
     var selectSearchResult = function (result, note) {
       var cfg = window.CONFIG || {};
-      if (cfg.gameApiProxyBase) {
+      if (result.creatorName) {
+        gameInfoCache[result.placeId] = Promise.resolve(result);
+      } else if (cfg.gameApiProxyBase) {
         gameInfoCache[result.placeId] = fetchViaProxy(cfg.gameApiProxyBase, result.placeId).then(function (info) {
           return {
             name: info.name || result.name || null,
@@ -1302,7 +1950,8 @@
         if (!item || !item.placeId) return;
 
         var card = document.createElement('div');
-        card.className = 'related-card';
+        card.className = 'related-card' + (cfg.features && cfg.features.minimalDiscoveryCards ? ' is-compact' : '');
+        card.dataset.placeId = item.placeId;
 
         var thumb = document.createElement('div');
         thumb.className = 'related-card-thumb';
@@ -1310,6 +1959,12 @@
         var img = document.createElement('img');
         img.alt = '';
         img.loading = 'lazy';
+        img.onerror = function () {
+          // Dead/blocked icon URL — hide the broken-image glyph rather
+          // than let the browser draw its default icon in its place.
+          img.onerror = null;
+          img.style.visibility = 'hidden';
+        };
         if (item.iconUrl) img.src = item.iconUrl;
         thumb.appendChild(img);
 
@@ -1392,33 +2047,92 @@
       currentRelatedList = newRelated;
 
       if (relatedGamesLabelEl) relatedGamesLabelEl.textContent = 'Kết quả khác';
-      selectSearchResult(item, 'Đây là kết quả bạn chọn từ danh sách bên dưới — kiểm tra lại đúng game trước khi chia sẻ.');
+      selectSearchResult(item, genNoteV2Enabled
+        ? 'Kết quả được chọn từ danh sách bên dưới. Vui lòng xác nhận đúng game trước khi chia sẻ liên kết.'
+        : 'Đây là kết quả bạn chọn từ danh sách bên dưới — kiểm tra lại đúng game trước khi chia sẻ.');
       animateRelatedGamesReload(newRelated);
     };
 
     var searchGen = 0;
     var searchDebounceTimer = null;
+    var lastSearchedRaw = null;
+
+    // Normalizes away spacing-only differences — leading/trailing (also
+    // already gone via .trim() upstream) and repeated/internal
+    // whitespace — so a change that's whitespace-only never counts as
+    // "different text" anywhere below.
+    var normalizeSearchText = function (raw) {
+      return raw.replace(/\s+/g, ' ').trim();
+    };
+
+    var performNameSearch = function (raw, myGen) {
+      showCardLoading();
+      fetchGameBySearch(raw).then(function (result) {
+        if (myGen !== searchGen) return; // input changed since — drop stale result
+        if (!result || !result.placeId) {
+          showError('Không tìm thấy game nào khớp với “' + raw + '” — thử dán link/Place ID Roblox, hoặc gõ tên chính xác hơn.');
+          return;
+        }
+        currentMainItem = result;
+        currentRelatedList = (result.related || []).slice();
+        if (relatedGamesLabelEl) relatedGamesLabelEl.textContent = 'Kết quả khác';
+        selectSearchResult(result, genNoteV2Enabled
+          ? 'Đây là kết quả phù hợp nhất với từ khóa bạn nhập. Vui lòng kiểm tra kỹ trước khi chia sẻ liên kết.'
+          : 'Đây là kết quả gần đúng nhất theo tên bạn gõ — kiểm tra lại đúng game trước khi chia sẻ.');
+        renderRelatedGames(currentRelatedList);
+      }).catch(function () {
+        if (myGen !== searchGen) return;
+        showError('Không tìm kiếm được lúc này — thử lại hoặc dán link/Place ID trực tiếp.');
+      });
+    };
 
     var handleNameSearch = function (raw) {
       var myGen = ++searchGen;
       clearTimeout(searchDebounceTimer);
+      var cfg = window.CONFIG || {};
+      if (cfg.features && cfg.features.instantSearchTrigger) {
+        // Pre-Alpha2.5+: plain typing never fires a request on its own
+        // anymore — only an explicit "I'm done" signal does (Enter, or
+        // leaving the field — see triggerSearchNow below). A mere pause
+        // while still typing used to auto-fire here too, which is what
+        // was sending one request per keystroke on anything slower than
+        // 450ms between letters; removed so nothing goes out until you
+        // actually signal you're finished.
+        return;
+      }
+      // Older versions (no instantSearchTrigger) keep the original
+      // pause-triggers-a-search behavior, since they have no other way
+      // to fire a name search at all.
       searchDebounceTimer = setTimeout(function () {
-        fetchGameBySearch(raw).then(function (result) {
-          if (myGen !== searchGen) return; // input changed since — drop stale result
-          if (!result || !result.placeId) {
-            showError('Không tìm thấy game nào khớp với “' + raw + '” — thử dán link/Place ID Roblox, hoặc gõ tên chính xác hơn.');
-            return;
-          }
-          currentMainItem = result;
-          currentRelatedList = (result.related || []).slice();
-          if (relatedGamesLabelEl) relatedGamesLabelEl.textContent = 'Kết quả khác';
-          selectSearchResult(result, 'Đây là kết quả gần đúng nhất theo tên bạn gõ — kiểm tra lại đúng game trước khi chia sẻ.');
-          renderRelatedGames(currentRelatedList);
-        }).catch(function () {
-          if (myGen !== searchGen) return;
-          showError('Không tìm kiếm được lúc này — thử lại hoặc dán link/Place ID trực tiếp.');
-        });
+        var normalized = normalizeSearchText(raw);
+        if (normalized === lastSearchedRaw) return; // whitespace-only (or exact) repeat of the last search — skip
+        lastSearchedRaw = normalized;
+        performNameSearch(raw, myGen);
       }, 450);
+    };
+
+    // An explicit "I'm done" signal (Enter, just pasted, or leaving the
+    // field) is what actually fires a name search on Pre-Alpha2.5+ —
+    // see the early-return in handleNameSearch above for why plain
+    // typing alone no longer does.
+    var triggerSearchNow = function () {
+      var cfg = window.CONFIG || {};
+      if (!(cfg.features && cfg.features.instantSearchTrigger)) return;
+      var raw = linkInput.value.trim();
+      if (!raw) return;
+      var info = parseRobloxLink(raw);
+      if (info) return; // a recognized link/Place ID already loads instantly on its own via handleInput
+      var looksLikeLink = /roblox\.com|roblox:\/\/|^https?:\/\//i.test(raw);
+      if (looksLikeLink) return; // invalid-looking link — handleInput already showed the specific error for this
+      // Checked before showCardLoading() below — a whitespace-only (or
+      // exact) repeat of the last search is a total no-op, so it
+      // shouldn't even flash the loading skeleton.
+      var normalized = normalizeSearchText(raw);
+      if (normalized === lastSearchedRaw) return;
+      lastSearchedRaw = normalized;
+      clearTimeout(searchDebounceTimer);
+      var myGen = ++searchGen;
+      performNameSearch(raw, myGen);
     };
 
     var handleInput = function () {
@@ -1427,8 +2141,18 @@
       searchGen++; // cancel any debounced search still in flight from before
       if (!raw) {
         showError('');
+        lastSearchedRaw = null;
+        // Empty search bar — bring the discovery rows back (only if they
+        // actually have data; loadDiscoveryRows() flips this on once
+        // it's done, so before that finishes this is just a no-op).
+        if (discoveryRowsEl && discoveryRowsEl.dataset.ready === '1') {
+          discoveryRowsEl.hidden = false;
+        }
         return;
       }
+      // Actively searching/pasting — get the discovery rows out of the
+      // way so they don't compete with the actual result for space.
+      if (discoveryRowsEl) discoveryRowsEl.hidden = true;
 
       var info = parseRobloxLink(raw);
 
@@ -1528,8 +2252,23 @@
 
     linkInput.addEventListener('input', handleInput);
     linkInput.addEventListener('paste', function () {
-      setTimeout(handleInput, 0);
+      setTimeout(function () {
+        handleInput();
+        triggerSearchNow();
+      }, 0);
     });
+    linkInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        var cfg = window.CONFIG || {};
+        if (!(cfg.features && cfg.features.instantSearchTrigger)) return;
+        e.preventDefault();
+        triggerSearchNow();
+        linkInput.blur(); // "thoát khỏi chế độ nhập" — this also fires the blur listener below, which the dedup check in triggerSearchNow makes a safe no-op for the same text
+      }
+    });
+    linkInput.addEventListener('blur', triggerSearchNow);
+
+    loadDiscoveryRows();
 
     copyBtn.addEventListener('click', function () {
       if (!outputEl.value) return;
@@ -1974,6 +2713,19 @@
             content.classList.remove('is-page-entering');
           });
         }
+
+        // Same "tuck the new page's top edge just under the nav" scroll
+        // as picking a different game does (scrollToGameCard, further up
+        // this file) — reusing its cfg.features.autoScrollToGame flag
+        // means this is likewise Pre-Alpha2.5+ only, not a separate flag.
+        if (cfg.features && cfg.features.autoScrollToGame) {
+          var topbarEl = document.querySelector('.topbar');
+          var navGap = (topbarEl ? topbarEl.getBoundingClientRect().bottom : 90) + 14;
+          var sectionRect = nextSection.getBoundingClientRect();
+          if (Math.abs(sectionRect.top - navGap) > 16) {
+            window.scrollTo({ top: Math.max(0, window.scrollY + sectionRect.top - navGap), behavior: 'smooth' });
+          }
+        }
       };
 
       // Fallback for any environment where pointer events above didn't
@@ -2081,5 +2833,289 @@
       closeSwitchMenu();
       closeChangelog();
     });
+  })();
+
+  // ── Pre-Alpha2.5+ (cardHoverPreview): floating glass hover-preview ──
+  // for .is-compact game cards (discovery rows + "Kết quả khác"). A
+  // version without this flag never runs any of this, so those cards
+  // keep their plain lift+highlight hover exactly as before.
+  (function () {
+    if (!(cfg.features && cfg.features.cardHoverPreview)) return;
+
+    // Every hover now creates its OWN fresh preview instance rather than
+    // one shared element getting repositioned/reused — hovering a new
+    // card no longer "snaps" the existing panel over to it. Instead the
+    // previous instance plays its normal close animation right where it
+    // is and removes itself from the DOM once that finishes, while a
+    // brand new instance bursts open at the new card independently. The
+    // two can be visible at the same time for the short overlap while
+    // one is closing and the other opening.
+    var activeCard = null;   // card the CURRENT (latest) instance belongs to
+    var activeInstance = null;
+    var hideTimer = null;    // debounce before the active instance starts closing
+
+    // Same sizing model as before — panel scales off the hovered card's
+    // own rendered width (WIDTH_EXTRA px wider), height keeping the
+    // original 200×270 ratio so growing it is a uniform "square, but
+    // taller" scale-up rather than one dimension stretching alone.
+    var WIDTH_EXTRA = 15;
+    var PREVIEW_RATIO = 270 / 200;
+    var HIDE_DELAY_MS = 120;
+    // How long an instance's close animation takes before it's safe to
+    // actually remove its elements — matches the shrink transition
+    // (0.34s, see .card-hover-preview in style.css) plus the opacity
+    // fade that follows it (0.15s) once is-visible comes off.
+    var CLOSE_SHRINK_MS = 340;
+    var CLOSE_FADE_MS = 150;
+
+    var createInstance = function (card) {
+      var el = document.createElement('div');
+      el.className = 'card-hover-preview';
+
+      var thumb = document.createElement('div');
+      thumb.className = 'card-hover-preview-thumb';
+      var imgEl = document.createElement('img');
+      imgEl.alt = '';
+      thumb.appendChild(imgEl);
+
+      var body = document.createElement('div');
+      body.className = 'card-hover-preview-body';
+
+      var playBtn = document.createElement('button');
+      playBtn.type = 'button';
+      playBtn.className = 'card-hover-preview-play';
+      playBtn.innerHTML = PLAY_ICON_SVG;
+      playBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (playBtn._placeId) {
+          window.location.href = buildDeepLink({ type: 'web', placeId: playBtn._placeId });
+        }
+      });
+
+      body.appendChild(playBtn);
+      el.appendChild(thumb);
+      el.appendChild(body);
+
+      // Same one element handles the whole journey — no separate "real"
+      // name element to cross-fade into. See the matching comment this
+      // was copied from further up in git history for the full "why".
+      var captionEl = document.createElement('div');
+      captionEl.className = 'card-hover-preview-caption';
+      el.appendChild(captionEl);
+
+      var inst = {
+        el: el,
+        glowEl: null,
+        imgEl: imgEl,
+        captionEl: captionEl,
+        playBtn: playBtn,
+        card: card,
+        closing: false,
+        expandRaf1: null,
+        expandRaf2: null,
+        closeTimer1: null,
+        closeTimer2: null
+      };
+
+      el.addEventListener('click', function () {
+        if (inst.card) inst.card.click();
+      });
+      el.addEventListener('mouseenter', function () {
+        if (activeInstance === inst) cancelHide();
+      });
+      el.addEventListener('mouseleave', function () {
+        if (activeInstance === inst) scheduleHide();
+      });
+
+      // Ambient glow — separate element (not a child; .card-hover-preview
+      // needs overflow:hidden to clip the image/caption to its own
+      // rounded box, which would clip this too) mirroring the panel's
+      // position/size/visibility, sitting just behind it.
+      var glowEl = document.createElement('div');
+      glowEl.className = 'card-hover-preview-glow';
+      inst.glowEl = glowEl;
+
+      document.body.appendChild(glowEl);
+      document.body.appendChild(el);
+
+      return inst;
+    };
+
+    var destroyInstance = function (inst) {
+      if (!inst) return;
+      cancelAnimationFrame(inst.expandRaf1);
+      cancelAnimationFrame(inst.expandRaf2);
+      clearTimeout(inst.closeTimer1);
+      clearTimeout(inst.closeTimer2);
+      if (inst.el && inst.el.parentNode) inst.el.parentNode.removeChild(inst.el);
+      if (inst.glowEl && inst.glowEl.parentNode) inst.glowEl.parentNode.removeChild(inst.glowEl);
+    };
+
+    // Plays the close animation for one specific instance, then removes
+    // it from the DOM once that finishes — independent of whatever
+    // other instance (if any) is opening elsewhere at the same time.
+    var closeInstance = function (inst) {
+      if (!inst || inst.closing) return;
+      inst.closing = true;
+      cancelAnimationFrame(inst.expandRaf1);
+      cancelAnimationFrame(inst.expandRaf2);
+
+      var rect = inst.card ? inst.card.getBoundingClientRect() : null;
+      inst.el.classList.remove('is-expanding');
+      inst.glowEl.classList.remove('is-expanding');
+      // Glow fades out right now, on its own snappier timing — not tied
+      // to the panel's own longer shrink-then-fade sequence below, which
+      // is what made it feel stuck/rigid mid-shrink.
+      inst.glowEl.classList.add('is-hiding');
+      inst.glowEl.classList.remove('is-visible');
+
+      if (rect) {
+        inst.el.style.left = rect.left + 'px';
+        inst.el.style.width = rect.width + 'px';
+        inst.el.style.top = rect.top + 'px';
+        inst.el.style.height = rect.height + 'px';
+        inst.glowEl.style.left = rect.left + 'px';
+        inst.glowEl.style.width = rect.width + 'px';
+        inst.glowEl.style.top = rect.top + 'px';
+        inst.glowEl.style.height = rect.height + 'px';
+      }
+
+      inst.closeTimer1 = setTimeout(function () {
+        inst.el.classList.remove('is-visible');
+      }, CLOSE_SHRINK_MS);
+      inst.closeTimer2 = setTimeout(function () {
+        destroyInstance(inst);
+      }, CLOSE_SHRINK_MS + CLOSE_FADE_MS);
+    };
+
+    var showFor = function (card) {
+      if (activeCard === card) return;
+
+      // The previously-active instance (if any) starts closing right
+      // where it is and cleans itself up — it does NOT get reused for
+      // the new card.
+      if (activeInstance) closeInstance(activeInstance);
+      if (activeCard) activeCard.classList.remove('is-preview-source');
+
+      var img = card.querySelector('.related-card-thumb img');
+      var nameEl = card.querySelector('.related-card-name');
+      if (!img) { activeCard = null; activeInstance = null; return; }
+
+      activeCard = card;
+      card.classList.add('is-preview-source');
+
+      var inst = createInstance(card);
+      activeInstance = inst;
+
+      inst.imgEl.src = img.currentSrc || img.src || '';
+      inst.glowEl.style.backgroundImage = 'url(' + (img.currentSrc || img.src || '') + ')';
+      inst.captionEl.textContent = (nameEl && nameEl.textContent) || '';
+      inst.playBtn._placeId = card.dataset.placeId || null;
+      // Same thumbnail as the panel's own ambient glow — the Play
+      // button's hover glow (see .card-hover-preview-play::before in
+      // style.css) reads it via this CSS custom property.
+      inst.playBtn.style.setProperty('--play-glow-image', 'url(' + (img.currentSrc || img.src || '') + ')');
+
+      var rect = card.getBoundingClientRect();
+      var centerX = rect.left + rect.width / 2;
+      var centerY = rect.top + rect.height / 2;
+      var previewWidth = rect.width + WIDTH_EXTRA;
+      var previewHeight = previewWidth * PREVIEW_RATIO;
+
+      // Snap to the hovered card's exact box AND make it fully visible
+      // at that exact size/position, transitions off for this one step —
+      // for an instant it's indistinguishable from the real card. Then,
+      // still synchronously, flip to the expanded box with transitions
+      // back on: that's the one thing that animates, starting exactly
+      // where the card was.
+      inst.el.style.transition = 'none';
+      inst.el.classList.add('is-visible');
+      inst.el.style.left = rect.left + 'px';
+      inst.el.style.width = rect.width + 'px';
+      inst.el.style.top = rect.top + 'px';
+      inst.el.style.height = rect.height + 'px';
+      inst.glowEl.style.transition = 'none';
+      inst.glowEl.classList.add('is-visible');
+      inst.glowEl.style.left = rect.left + 'px';
+      inst.glowEl.style.width = rect.width + 'px';
+      inst.glowEl.style.top = rect.top + 'px';
+      inst.glowEl.style.height = rect.height + 'px';
+      // …force layout so that starting box is actually committed as a
+      // real, painted style before transitions come back on.
+      void inst.el.offsetHeight;
+      inst.el.style.transition = '';
+      inst.glowEl.style.transition = '';
+
+      // Double-nested rAF — a single rAF can still run before the
+      // browser has actually painted the snap state above, letting it
+      // get coalesced with the expand change below into one jump with
+      // nothing to animate from. Waiting two frames guarantees a real
+      // paint happened in between.
+      inst.expandRaf1 = requestAnimationFrame(function () {
+        inst.expandRaf2 = requestAnimationFrame(function () {
+          if (inst.closing) return; // dismissed/superseded meanwhile
+
+          inst.el.classList.add('is-expanding');
+          inst.el.style.left = (centerX - previewWidth / 2) + 'px';
+          inst.el.style.width = previewWidth + 'px';
+          inst.el.style.top = (centerY - previewHeight / 2) + 'px';
+          inst.el.style.height = previewHeight + 'px';
+          inst.glowEl.classList.add('is-expanding');
+          inst.glowEl.style.left = (centerX - previewWidth / 2) + 'px';
+          inst.glowEl.style.width = previewWidth + 'px';
+          inst.glowEl.style.top = (centerY - previewHeight / 2) + 'px';
+          inst.glowEl.style.height = previewHeight + 'px';
+        });
+      });
+    };
+
+    var hide = function () {
+      if (activeCard) {
+        activeCard.classList.remove('is-preview-source');
+        activeCard = null;
+      }
+      if (activeInstance) {
+        closeInstance(activeInstance);
+        activeInstance = null;
+      }
+    };
+
+    var cancelHide = function () {
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    };
+
+    var scheduleHide = function () {
+      cancelHide();
+      hideTimer = setTimeout(hide, HIDE_DELAY_MS);
+    };
+
+    // Delegated on document (rather than per-card) since discovery/
+    // related cards get torn down and rebuilt on every new search or
+    // reload — this way nothing needs re-wiring when that happens.
+    document.addEventListener('mouseover', function (e) {
+      var card = e.target.closest ? e.target.closest('.is-compact') : null;
+      if (!card) return;
+      cancelHide();
+      if (activeCard !== card) showFor(card);
+    });
+
+    document.addEventListener('mouseout', function (e) {
+      var card = e.target.closest ? e.target.closest('.is-compact') : null;
+      if (!card) return;
+      // Moving onto the active instance's own panel (which lives outside
+      // the card in the DOM) shouldn't count as leaving.
+      var to = e.relatedTarget;
+      if (activeInstance && to && activeInstance.el.contains(to)) return;
+      scheduleHide();
+    });
+
+    // A hovered card scrolling out from under a stale preview (the
+    // discovery rows scroll horizontally) is jarring — just close it
+    // immediately rather than trying to keep it glued in place.
+    document.addEventListener('scroll', function (e) {
+      if (activeCard && e.target && e.target.contains && e.target.contains(activeCard)) {
+        hide();
+      }
+    }, true);
   })();
 })();
